@@ -36,11 +36,12 @@ struct progress_bar {
     size_t total;
     size_t current;
     size_t cur_percent;
-    progress_bar(size_t t)
+    progress_bar(std::string str, size_t t)
         : total(t)
         , current(0)
         , cur_percent(0)
     {
+        std::cout << str << ":" << std::endl;
         fprintf(stdout, "[  0/100] |");
         for (size_t i = 0; i < 50; i++)
             fprintf(stdout, " ");

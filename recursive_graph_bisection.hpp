@@ -42,8 +42,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
     {
         size_t doc_size_sum = 0;
         std::vector<uint32_t> doc_sizes;
-        std::cout << "determine doc sizes:" << std::endl;
-        progress_bar progress(idx.size());
+        progress_bar progress("determine doc sizes", idx.size());
         for (size_t termid = 0; termid < idx.size(); termid++) {
             const auto& plist = idx[termid];
             for (const auto& doc_id : plist) {
@@ -67,8 +66,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
         }
     }
     {
-        std::cout << "creating forward index:" << std::endl;
-        progress_bar progress(idx.size());
+        progress_bar progress("creating forward index", idx.size());
         std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
         for (size_t termid = 0; termid < idx.size(); termid++) {
             const auto& plist = idx[termid];
@@ -140,18 +138,29 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 
     // (1) compute current partition cost deg1/deg2
     std::vector<uint32_t> deg1(num_queries, 0);
-    for (size_t i = 0; i < P.n1; i++) {
-        auto doc = P.V1 + i;
-        for (size_t j = 0; j < doc->num_terms; j++) {
-            deg1[doc->terms[j]]++;
+    std::vector<uint32_t> deg2(num_queries, 0);
+    {
+        progress_bar progress("compute d1, d2", P.n1 + P.n2);
+        for (size_t i = 0; i < P.n1; i++) {
+            auto doc = P.V1 + i;
+            for (size_t j = 0; j < doc->num_terms; j++) {
+                deg1[doc->terms[j]]++;
+            }
+            ++progress;
+        }
+
+        for (size_t i = 0; i < P.n2; i++) {
+            auto doc = P.V2 + i;
+            for (size_t j = 0; j < doc->num_terms; j++) {
+                deg2[doc->terms[j]]++;
+            }
+            ++progress;
         }
     }
-    std::vector<uint32_t> deg2(num_queries, 0);
-    for (size_t i = 0; i < P.n2; i++) {
-        auto doc = P.V2 + i;
-        for (size_t j = 0; j < doc->num_terms; j++) {
-            deg2[doc->terms[j]]++;
-        }
+
+    for (size_t i = 0; i < deg1.size(); i++) {
+        std::cout << "d1(" << i << ") = " << d1[i] << "d2(" << i
+                  << ") = " << d2[i] << std::endl;
     }
 
     // (2) compute gains from moving docs
