@@ -166,18 +166,18 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     // (2) compute gains from moving docs
     for (size_t i = 0; i < P.n1; i++) {
         auto doc = P.V1 + i;
-        float before_move = 0.0;
-        float after_move = 0.0;
+        double before_move = 0.0;
+        double after_move = 0.0;
         for (size_t j = 0; j < doc->num_terms; j++) {
             auto q = doc->terms[j];
-            float d1 = deg1[q];
-            float d2 = deg2[q];
-            before_move += ((d1 * logf(float(P.n1) / (d1 + 1)))
-                + (d2 * logf(float(P.n2) / (d2 + 1))));
-            after_move += (((d1 - 1) * logf(float(P.n1) / ((d1 - 1) + 1)))
-                + ((d2 + 1) * logf(float(P.n2) / ((d2 + 1) + 1))));
+            double d1 = deg1[q];
+            double d2 = deg2[q];
+            before_move += ((d1 * log2(double(P.n1) / (d1 + 1)))
+                + (d2 * log2(double(P.n2) / (d2 + 1))));
+            after_move += (((d1 - 1) * logf(double(P.n1) / ((d1 - 1) + 1)))
+                + ((d2 + 1) * log2(double(P.n2) / ((d2 + 1) + 1))));
         }
-        float gain = before_move - after_move;
+        double gain = before_move - after_move;
 
         if (gain != 0) {
             std::cout << "before_move = " << before_move
@@ -189,18 +189,18 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 
     for (size_t i = 0; i < P.n2; i++) {
         auto doc = P.V2 + i;
-        float before_move = 0.0;
-        float after_move = 0.0;
+        double before_move = 0.0;
+        double after_move = 0.0;
         for (size_t j = 0; j < doc->num_terms; j++) {
             auto q = doc->terms[j];
             float d1 = deg1[q];
             float d2 = deg2[q];
-            before_move += ((d1 * logf(float(P.n1) / (d1 + 1)))
-                + (d2 * logf(float(P.n2) / (d2 + 1))));
-            after_move += (((d1 + 1) * logf(float(P.n1) / ((d1 + 1) + 1)))
-                + ((d2 - 1) * logf(float(P.n2) / ((d2 - 1) + 1))));
+            before_move += ((d1 * log2(double(P.n1) / (d1 + 1)))
+                + (d2 * log2(double(P.n2) / (d2 + 1))));
+            after_move += (((d1 + 1) * log2(double(P.n1) / ((d1 + 1) + 1)))
+                + ((d2 - 1) * log2(double(P.n2) / ((d2 - 1) + 1))));
         }
-        float gain = before_move - after_move;
+        double gain = before_move - after_move;
         if (gain != 0) {
             std::cout << "before_move = " << before_move
                       << " after_move = " << after_move << " gain = " << gain
