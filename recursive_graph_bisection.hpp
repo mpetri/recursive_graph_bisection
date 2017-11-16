@@ -43,10 +43,7 @@ partition_t initial_partition(docid_node* G, size_t n)
 struct move_gain {
     float gain;
     docid_node* node;
-    bool operator<(const move_gain& other)
-    {
-        return gain >= other.gain;
-    }
+    bool operator<(const move_gain& other) { return gain >= other.gain; }
 };
 
 struct move_gains_t {
@@ -54,8 +51,7 @@ struct move_gains_t {
     std::vector<move_gain> V2;
 };
 
-move_gains_t
-compute_move_gains(std::vector<query_node>& Q, partition_t& P)
+move_gains_t compute_move_gains(std::vector<query_node>& Q, partition_t& P)
 {
     move_gains_t G;
     for (const auto& q : Q) {
@@ -64,14 +60,17 @@ compute_move_gains(std::vector<query_node>& Q, partition_t& P)
     return G;
 }
 
-void recursive_bisection(std::vector<query_node>& Q, docid_node* G, size_t n, uint64_t depth = 0)
+void recursive_bisection(
+    std::vector<query_node>& Q, docid_node* G, size_t n, uint64_t depth = 0)
 {
     // (1) create the initial partition
     auto partition = initial_partition(G, n);
 
     // (2) perform bisection
-    for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITERATIONS; cur_iter++) {
-        // (2a) compute move gains. this has to happen in O(m) time, so O(1) per query
+    for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITERATIONS;
+         cur_iter++) {
+        // (2a) compute move gains. this has to happen in O(m) time,
+        //  so O(1) per
         auto gains = compute_move_gains(Q, partition);
 
         // (2a) sort by decreasing gain. O(n log n)
@@ -84,7 +83,8 @@ void recursive_bisection(std::vector<query_node>& Q, docid_node* G, size_t n, ui
         auto itr_v2 = gains.V2.begin();
         while (itr_v1 != gains.V1.end() && itr_v2 != gains.V2.end()) {
             if (itr_v1->gain + itr_v2->gain > 0) {
-                // maybe we need to do something here to make compute_move_gains() efficient?
+                // maybe we need to do something here to make
+                // compute_move_gains() efficient?
                 swap_nodes(itr_v1->node, itr_v2->node);
                 num_swaps++;
             } else {
