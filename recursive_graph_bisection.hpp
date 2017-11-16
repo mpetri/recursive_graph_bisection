@@ -178,10 +178,13 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
                 + ((d2 + 1) * logf(float(P.n2) / ((d2 + 1) + 1))));
         }
         float gain = before_move - after_move;
-        std::cout << "before_move = " << before_move
-                  << " after_move = " << after_move << " gain = " << gain
-                  << std::endl;
-        gains.V1.emplace_back(gain, doc);
+
+        if (gain != 0) {
+            std::cout << "before_move = " << before_move
+                      << " after_move = " << after_move << " gain = " << gain
+                      << std::endl;
+            gains.V1.emplace_back(gain, doc);
+        }
     }
 
     for (size_t i = 0; i < P.n2; i++) {
@@ -198,7 +201,12 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
                 + ((d2 - 1) * logf(float(P.n2) / ((d2 - 1) + 1))));
         }
         float gain = before_move - after_move;
-        gains.V2.emplace_back(gain, doc);
+        if (gain != 0) {
+            std::cout << "before_move = " << before_move
+                      << " after_move = " << after_move << " gain = " << gain
+                      << std::endl;
+            gains.V2.emplace_back(gain, doc);
+        }
     }
 
     return gains;
