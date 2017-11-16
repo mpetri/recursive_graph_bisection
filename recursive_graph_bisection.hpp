@@ -4,7 +4,7 @@
 
 namespace constants {
 const uint64_t MAX_DEPTH = 13;
-const uint64_t MAX_ITERATIONS = 10;
+const uint64_t MAX_ITER = 10;
 }
 
 struct docid_node {
@@ -63,14 +63,13 @@ move_gains_t compute_move_gains(std::vector<query_node>& Q, partition_t& P)
 void recursive_bisection(
     std::vector<query_node>& Q, docid_node* G, size_t n, uint64_t depth = 0)
 {
-    // (1) create the initial partition
+    // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
 
-    // (2) perform bisection
-    for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITERATIONS;
-         cur_iter++) {
+    // (2) perform bisection. constant number of iterations
+    for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
         // (2a) compute move gains. this has to happen in O(m) time,
-        //  so O(1) per
+        //  so O(1) per query. probably need some sort of hash table??
         auto gains = compute_move_gains(Q, partition);
 
         // (2a) sort by decreasing gain. O(n log n)
