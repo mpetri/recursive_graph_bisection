@@ -179,7 +179,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         }
         double gain = before_move - after_move;
 
-        if (gain != 0) {
+        if (gain > 0) {
             std::cout << "before_move = " << before_move
                       << " after_move = " << after_move << " gain = " << gain
                       << std::endl;
@@ -201,7 +201,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
                 + ((d2 - 1) * log2(double(P.n2) / ((d2 - 1) + 1))));
         }
         double gain = before_move - after_move;
-        if (gain != 0) {
+        if (gain > 0) {
             std::cout << "before_move = " << before_move
                       << " after_move = " << after_move << " gain = " << gain
                       << std::endl;
