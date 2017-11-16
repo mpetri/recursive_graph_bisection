@@ -159,7 +159,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     }
 
     for (size_t i = 0; i < deg1.size(); i++) {
-        std::cout << "deg1(" << i << ") = " << deg1[i] << "deg2(" << i
+        std::cout << "deg1(" << i << ") = " << deg1[i] << " deg2(" << i
                   << ") = " << deg2[i] << std::endl;
     }
 
@@ -179,7 +179,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         }
         float gain = before_move - after_move;
         std::cout << "before_move = " << before_move
-                  << " after_move = " << before_move << " gain = " << gain
+                  << " after_move = " << after_move << " gain = " << gain
                   << std::endl;
         gains.V1.emplace_back(gain, doc);
     }
