@@ -38,8 +38,8 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
         const auto& plist = idx[termid];
         for (const auto& doc_id : plist) {
             max_doc_id = std::max(max_doc_id, doc_id);
-            if (bg.size() <= doc_id) {
-                bg.resize(1 + doc_id * 2);
+            if (bg.size() <= max_doc_id) {
+                bg.resize(1 + max_doc_id * 2);
             }
             bg[doc_id].initial_id = doc_id;
             if (bg[doc_id].terms.empty())
