@@ -40,6 +40,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
     {
         size_t doc_size_sum = 0;
         std::vector<uint32_t> doc_sizes;
+        std::cout << "determine doc sizes:" << std::endl;
         progress_bar progress(idx.size());
         for (size_t termid = 0; termid < idx.size(); termid++) {
             const auto& plist = idx[termid];
@@ -58,12 +59,13 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
         bg.graph.resize(max_doc_id + 1);
         bg.graph[0].terms = bg.doc_contents.data();
         bg.graph[0].num_terms = doc_sizes[0];
-        for (size_t i = 1; doc_sizes.size(); i++) {
+        for (size_t i = 1; i < doc_sizes.size(); i++) {
             bg.graph[i].terms = bg.graph[i - 1].terms + bg.graph[i].num_terms;
             bg.graph[i].num_terms = doc_sizes[i];
         }
     }
     {
+        std::cout << "creating forward index:" << std::endl;
         progress_bar progress(idx.size());
         std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
         for (size_t termid = 0; termid < idx.size(); termid++) {
