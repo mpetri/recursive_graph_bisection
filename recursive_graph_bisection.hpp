@@ -1,9 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <random>
 #include <unordered_map>
 #include <vector>
+
+#include "util.hpp"
 
 namespace constants {
 const uint64_t MAX_DEPTH = 13;
@@ -23,10 +26,6 @@ struct partition_t {
     size_t n1;
     size_t n2;
 };
-
-using postings_list = std::vector<uint32_t>;
-
-using inverted_index = std::vector<postings_list>;
 
 bipartite_graph construct_bipartite_graph(inverted_index& idx)
 {
@@ -159,18 +158,22 @@ void swap_nodes(docid_node* a, docid_node* b)
 void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
 {
     // (1) create the initial partition. O(n)
+    std::cout << "initial_partition n=" << n << std::endl;
     auto partition = initial_partition(G, n);
 
     // (2) perform bisection. constant number of iterations
     for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
         // (2a) compute move gains
+        std::cout << "compute_move_gains n=" << n << std::endl;
         auto gains = compute_move_gains(partition);
 
         // (2a) sort by decreasing gain. O(n log n)
+        std::cout << "sort by decreasing gain n=" << n << std::endl;
         std::sort(gains.V1.begin(), gains.V1.end());
         std::sort(gains.V2.begin(), gains.V2.end());
 
         // (2b) swap. O(n)
+        std::cout << "swap n=" << n << std::endl;
         size_t num_swaps = 0;
         auto itr_v1 = gains.V1.begin();
         auto itr_v2 = gains.V2.begin();
@@ -194,6 +197,7 @@ void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
     }
 
     // (3) recurse. at most O(log n) recursion steps
+    std::cout << "recurse n=" << n << std::endl;
     if (depth + 1 <= constants::MAX_DEPTH) {
         if (partition.n1 > 1)
             recursive_bisection(partition.V1, partition.n1, depth + 1);
@@ -204,9 +208,11 @@ void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
 
 inverted_index reorder_docids_graph_bisection(inverted_index& invidx)
 {
+    std::cout << "construct_bipartite_graph" << std::endl;
     auto bipartite_graph = construct_bipartite_graph(invidx);
 
     recursive_bisection(bipartite_graph.data(), bipartite_graph.size());
 
+    std::cout << "recreate_invidx" << std::endl;
     return recreate_invidx(bipartite_graph);
 }
