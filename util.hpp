@@ -94,9 +94,9 @@ std::vector<uint32_t> read_uint32_list(FILE* f)
         return std::vector<uint32_t>();
     std::vector<uint32_t> list(list_len);
     read_u32s(f, list.data(), list_len);
-    for (uint32_t j = 0; j < list_len; j++) {
-        list[j]++; // ensure there are no 0s
-    }
+    // for (uint32_t j = 0; j < list_len; j++) {
+    //     list[j]++; // ensure there are no 0s
+    // }
     return list;
 }
 
