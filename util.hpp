@@ -117,7 +117,7 @@ inverted_index read_d2si_docs(std::string docs_file, int min_list_len)
             const auto& list = read_uint32_list(df);
             size_t n = list.size();
             if (n < min_list_len)
-                break;
+                continue;
             max_doc_id = std::max(max_doc_id, list.back());
             num_lists++;
             num_postings += n;
