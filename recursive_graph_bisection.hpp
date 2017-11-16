@@ -41,9 +41,13 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
                 bg.resize(1 + doc_id * 2);
             }
             bg[doc_id].initial_id = doc_id;
+            if (bg[doc_id].terms.empty())
+                bg[doc_id].terms.reserve(1024);
             bg[doc_id].terms.push_back(termid);
         }
     }
+    for (auto& dn : bg)
+        dn.terms.shrink_to_fit();
     bg.resize(max_doc_id + 1);
     return bg;
 }
