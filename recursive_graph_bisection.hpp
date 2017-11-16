@@ -16,10 +16,14 @@ const uint64_t MAX_ITER = 10;
 
 struct docid_node {
     uint64_t initial_id;
-    std::vector<uint32_t> terms;
+    uint32_t* terms;
+    size_t num_terms;
 };
 
-using bipartite_graph = std::vector<docid_node>;
+struct bipartite_graph {
+    std::vector<docid_node> graph;
+    std::vector<uint32_t> doc_contents;
+};
 
 struct partition_t {
     docid_node* V1;
@@ -33,24 +37,44 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
     timer t("construct_bipartite_graph");
     bipartite_graph bg;
     uint32_t max_doc_id = 0;
-    progress_bar progress(idx.size());
-    for (size_t termid = 0; termid < idx.size(); termid++) {
-        const auto& plist = idx[termid];
-        for (const auto& doc_id : plist) {
-            max_doc_id = std::max(max_doc_id, doc_id);
-            if (bg.size() <= max_doc_id) {
-                bg.resize(1 + max_doc_id * 2);
+    {
+        size_t doc_size_sum = 0;
+        std::vector<uint32_t> doc_sizes;
+        progress_bar progress(idx.size());
+        for (size_t termid = 0; termid < idx.size(); termid++) {
+            const auto& plist = idx[termid];
+            for (const auto& doc_id : plist) {
+                max_doc_id = std::max(max_doc_id, doc_id);
+                if (doc_sizes.size() <= max_doc_id) {
+                    doc_sizes.resize(1 + max_doc_id * 2);
+                }
+                doc_sizes[doc_id]++;
+                doc_size_sum++;
             }
-            bg[doc_id].initial_id = doc_id;
-            if (bg[doc_id].terms.empty())
-                bg[doc_id].terms.reserve(128);
-            bg[doc_id].terms.push_back(termid);
+            ++progress;
         }
-        ++progress;
+        bg.doc_contents.resize(doc_size_sum);
+        doc_sizes.resize(max_doc_id + 1);
+        bg.graph.resize(max_doc_id + 1);
+        bg.graph[0].terms = bg.doc_contents.data();
+        bg.graph[0].num_terms = doc_sizes[0];
+        for (size_t i = 1; doc_sizes.size(); i++) {
+            bg.graph[i].terms = bg.graph[i].terms + bg.graph[i].num_terms;
+            bg.graph[i].num_terms = doc_sizes[i];
+        }
     }
-    for (auto& dn : bg)
-        dn.terms.shrink_to_fit();
-    bg.resize(max_doc_id + 1);
+    {
+        progress_bar progress(idx.size());
+        std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
+        for (size_t termid = 0; termid < idx.size(); termid++) {
+            const auto& plist = idx[termid];
+            for (const auto& doc_id : plist) {
+                bg.graph[doc_id].initial_id = doc_id;
+                bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+            }
+            ++progress;
+        }
+    }
     return bg;
 }
 
@@ -59,9 +83,10 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
     timer t("recreate_invidx");
     inverted_index idx;
     uint32_t max_qid_id = 0;
-    for (size_t docid = 0; docid < bg.size(); docid++) {
-        const auto& doc = bg[docid];
-        for (const auto& qid : doc.terms) {
+    for (size_t docid = 0; docid < bg.graph.size(); docid++) {
+        const auto& doc = bg.graph[docid];
+        for (size_t i = 0; i < doc.num_terms; i++) {
+            auto qid = doc.terms[i];
             max_qid_id = std::max(max_qid_id, qid);
             if (idx.size() <= qid) {
                 idx.resize(1 + qid * 2);
@@ -113,15 +138,15 @@ move_gains_t compute_move_gains(partition_t& P)
     std::unordered_map<uint32_t, uint32_t> deg1;
     for (size_t i = 0; i < P.n1; i++) {
         auto doc = P.V1 + i;
-        for (const auto& q : doc->terms) {
-            deg1[q]++;
+        for (size_t j = 0; j < doc->num_terms; j++) {
+            deg1[doc->terms[j]]++;
         }
     }
     std::unordered_map<uint32_t, uint32_t> deg2;
     for (size_t i = 0; i < P.n2; i++) {
         auto doc = P.V2 + i;
-        for (const auto& q : doc->terms) {
-            deg2[q]++;
+        for (size_t j = 0; j < doc->num_terms; j++) {
+            deg2[doc->terms[j]]++;
         }
     }
 
@@ -130,7 +155,8 @@ move_gains_t compute_move_gains(partition_t& P)
         auto doc = P.V1 + i;
         float before_move = 0.0;
         float after_move = 0.0;
-        for (const auto& q : doc->terms) {
+        for (size_t j = 0; j < doc->num_terms; j++) {
+            auto q = doc->terms[j];
             float d1 = deg1[q];
             float d2 = deg2[q];
             before_move += ((d1 * logf(float(P.n1) / (d1 + 1)))
@@ -146,7 +172,8 @@ move_gains_t compute_move_gains(partition_t& P)
         auto doc = P.V2 + i;
         float before_move = 0.0;
         float after_move = 0.0;
-        for (const auto& q : doc->terms) {
+        for (size_t j = 0; j < doc->num_terms; j++) {
+            auto q = doc->terms[j];
             float d1 = deg1[q];
             float d2 = deg2[q];
             before_move += ((d1 * logf(float(P.n1) / (d1 + 1)))
@@ -222,10 +249,10 @@ void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
 inverted_index reorder_docids_graph_bisection(inverted_index& invidx)
 {
     std::cout << "construct_bipartite_graph" << std::endl;
-    auto bipartite_graph = construct_bipartite_graph(invidx);
+    auto bg = construct_bipartite_graph(invidx);
 
-    recursive_bisection(bipartite_graph.data(), bipartite_graph.size());
+    recursive_bisection(bg.graph.data(), bg.graph.size());
 
     std::cout << "recreate_invidx" << std::endl;
-    return recreate_invidx(bipartite_graph);
+    return recreate_invidx(bg);
 }
