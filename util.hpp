@@ -45,6 +45,7 @@ struct progress_bar {
         for (size_t i = 0; i < 100; i++)
             fprintf(stdout, " ");
         fprintf(stdout, "|\r");
+        fflush(stdout);
     }
     progress_bar& operator++()
     {
@@ -57,6 +58,7 @@ struct progress_bar {
             for (size_t i = 0; i < cur_percent; i++)
                 fprintf(stdout, "=");
             fprintf(stdout, ">|\r");
+            fflush(stdout);
         }
         return *this;
     }
@@ -66,6 +68,7 @@ struct progress_bar {
         for (size_t i = 0; i < 100; i++)
             fprintf(stdout, "=");
         fprintf(stdout, ">|\n");
+        fflush(stdout);
     }
 };
 
