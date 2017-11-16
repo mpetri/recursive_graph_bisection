@@ -41,7 +41,7 @@ struct progress_bar {
         , current(0)
         , cur_percent(0)
     {
-        fprintf(stdout, "[0/100] |");
+        fprintf(stdout, "[  0/100] |");
         for (size_t i = 0; i < 100; i++)
             fprintf(stdout, " ");
         fprintf(stdout, "|\r");
@@ -50,11 +50,11 @@ struct progress_bar {
     progress_bar& operator++()
     {
         current++;
-        float fcp = float(current) / float(total);
+        float fcp = float(current) / float(total) * 100;
         size_t cp = fcp;
         if (cp != cur_percent) {
             cur_percent = cp;
-            fprintf(stdout, "[%d/100] |", (int)cur_percent);
+            fprintf(stdout, "[%3d/100] |", (int)cur_percent);
             for (size_t i = 0; i < cur_percent; i++)
                 fprintf(stdout, "=");
             fprintf(stdout, ">");
