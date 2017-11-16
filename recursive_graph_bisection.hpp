@@ -122,7 +122,7 @@ struct move_gain {
         , node(n)
     {
     }
-    bool operator<(const move_gain& other) { return gain >= other.gain; }
+    bool operator<(const move_gain& other) { return gain > other.gain; }
 };
 
 struct move_gains_t {
