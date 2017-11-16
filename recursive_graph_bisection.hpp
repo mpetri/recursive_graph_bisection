@@ -21,6 +21,7 @@ struct docid_node {
 };
 
 struct bipartite_graph {
+    size_t num_queries;
     std::vector<docid_node> graph;
     std::vector<uint32_t> doc_contents;
 };
@@ -36,6 +37,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
 {
     timer t("construct_bipartite_graph");
     bipartite_graph bg;
+    bg.num_queries = idx.size();
     uint32_t max_doc_id = 0;
     {
         size_t doc_size_sum = 0;
@@ -130,21 +132,21 @@ struct move_gains_t {
     std::vector<move_gain> V2;
 };
 
-move_gains_t compute_move_gains(partition_t& P)
+move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 {
     timer t("compute_move_gains n1=" + std::to_string(P.n1) + " n2="
         + std::to_string(P.n2));
     move_gains_t gains;
 
     // (1) compute current partition cost deg1/deg2
-    std::unordered_map<uint32_t, uint32_t> deg1;
+    std::vector<uint32_t> deg1(num_queries, 0);
     for (size_t i = 0; i < P.n1; i++) {
         auto doc = P.V1 + i;
         for (size_t j = 0; j < doc->num_terms; j++) {
             deg1[doc->terms[j]]++;
         }
     }
-    std::unordered_map<uint32_t, uint32_t> deg2;
+    std::vector<uint32_t> deg2(num_queries, 0);
     for (size_t i = 0; i < P.n2; i++) {
         auto doc = P.V2 + i;
         for (size_t j = 0; j < doc->num_terms; j++) {
@@ -196,7 +198,7 @@ void swap_nodes(docid_node* a, docid_node* b)
     std::swap(a->terms, b->terms);
 }
 
-void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
+void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
 {
     // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
@@ -204,7 +206,7 @@ void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
     // (2) perform bisection. constant number of iterations
     for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
         // (2a) compute move gains
-        auto gains = compute_move_gains(partition);
+        auto gains = compute_move_gains(partition, nq);
 
         // (2a) sort by decreasing gain. O(n log n)
         {
@@ -242,9 +244,9 @@ void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
     if (depth + 1 <= constants::MAX_DEPTH) {
         timer t("recurse n=" + std::to_string(n));
         if (partition.n1 > 1)
-            recursive_bisection(partition.V1, partition.n1, depth + 1);
+            recursive_bisection(partition.V1, nq, partition.n1, depth + 1);
         if (partition.n2 > 1)
-            recursive_bisection(partition.V2, partition.n2, depth + 1);
+            recursive_bisection(partition.V2, nq, partition.n2, depth + 1);
     }
 }
 
@@ -253,7 +255,7 @@ inverted_index reorder_docids_graph_bisection(inverted_index& invidx)
     std::cout << "construct_bipartite_graph" << std::endl;
     auto bg = construct_bipartite_graph(invidx);
 
-    recursive_bisection(bg.graph.data(), bg.graph.size());
+    recursive_bisection(bg.graph.data(), bg.num_queries, bg.graph.size());
 
     std::cout << "recreate_invidx" << std::endl;
     return recreate_invidx(bg);
