@@ -100,7 +100,7 @@ std::vector<uint32_t> read_uint32_list(FILE* f)
     return list;
 }
 
-inverted_index read_d2si_docs(std::string docs_file)
+inverted_index read_d2si_docs(std::string docs_file, int min_list_len)
 {
     inverted_index idx;
     timer t("read input list from " + docs_file);
@@ -116,7 +116,7 @@ inverted_index read_d2si_docs(std::string docs_file)
         while (!feof(df)) {
             const auto& list = read_uint32_list(df);
             size_t n = list.size();
-            if (n == 0)
+            if (n < min_list_len)
                 break;
             max_doc_id = std::max(max_doc_id, list.back());
             num_lists++;
