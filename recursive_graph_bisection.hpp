@@ -58,7 +58,7 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
         for (const auto& qid : doc.terms) {
             max_qid_id = std::max(max_qid_id, qid);
             if (idx.size() <= qid) {
-                idx.resize(idx.size() * 2);
+                idx.resize(1 + qid * 2);
             }
             idx[qid].push_back(docid);
         }
