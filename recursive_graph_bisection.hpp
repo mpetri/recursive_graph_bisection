@@ -115,9 +115,9 @@ partition_t initial_partition(docid_node* G, size_t n)
 }
 
 struct move_gain {
-    float gain;
+    double gain;
     docid_node* node;
-    move_gain(float g, docid_node* n)
+    move_gain(double g, docid_node* n)
         : gain(g)
         , node(n)
     {
@@ -193,8 +193,8 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         double after_move = 0.0;
         for (size_t j = 0; j < doc->num_terms; j++) {
             auto q = doc->terms[j];
-            float d1 = deg1[q];
-            float d2 = deg2[q];
+            double d1 = deg1[q];
+            double d2 = deg2[q];
             before_move += ((d1 * log2(double(P.n1) / (d1 + 1)))
                 + (d2 * log2(double(P.n2) / (d2 + 1))));
             after_move += (((d1 + 1) * log2(double(P.n1) / ((d1 + 1) + 1)))
