@@ -33,6 +33,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
     timer t("construct_bipartite_graph");
     bipartite_graph bg;
     uint32_t max_doc_id = 0;
+    progress_bar progress(idx.size());
     for (size_t termid = 0; termid < idx.size(); termid++) {
         const auto& plist = idx[termid];
         for (const auto& doc_id : plist) {
@@ -42,9 +43,10 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
             }
             bg[doc_id].initial_id = doc_id;
             if (bg[doc_id].terms.empty())
-                bg[doc_id].terms.reserve(1024);
+                bg[doc_id].terms.reserve(128);
             bg[doc_id].terms.push_back(termid);
         }
+        ++progress;
     }
     for (auto& dn : bg)
         dn.terms.shrink_to_fit();

@@ -31,6 +31,44 @@ struct timer {
     }
 };
 
+struct progress_bar {
+    high_resolution_clock::time_point start;
+    size_t total;
+    size_t current;
+    size_t cur_percent;
+    progress_bar(size_t t)
+        : total(t)
+        , current(0)
+        , cur_percent(0)
+    {
+        fprintf(stdout, "[0/100] |");
+        for (size_t i = 0; i < 100; i++)
+            fprintf(stdout, " ");
+        fprintf(stdout, "|\r");
+    }
+    progress_bar& operator++()
+    {
+        current++;
+        float fcp = float(current) / float(total);
+        size_t cp = fcp;
+        if (cp != cur_percent) {
+            cur_percent = cp;
+            fprintf(stdout, "[100/100] |");
+            for (size_t i = 0; i < cur_percent; i++)
+                fprintf(stdout, "=");
+            fprintf(stdout, ">|\r");
+        }
+        return *this;
+    }
+    ~progress_bar()
+    {
+        fprintf(stdout, "[100/100] |");
+        for (size_t i = 0; i < 100; i++)
+            fprintf(stdout, "=");
+        fprintf(stdout, ">|\n");
+    }
+};
+
 int fprintff(FILE* f, const char* format, ...)
 {
     va_list args;
