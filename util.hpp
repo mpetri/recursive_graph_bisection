@@ -108,11 +108,11 @@ inverted_index read_d2si_docs(std::string docs_file, int min_list_len)
     size_t num_docs = 0;
     size_t num_postings = 0;
     size_t num_lists = 0;
+    uint32_t max_doc_id = 0;
     {
         // (1) skip the numdocs list
         read_uint32_list(df);
         // (2) keep reading lists
-        uint32_t max_doc_id = 0;
         while (!feof(df)) {
             const auto& list = read_uint32_list(df);
             size_t n = list.size();
@@ -124,6 +124,26 @@ inverted_index read_d2si_docs(std::string docs_file, int min_list_len)
             idx.emplace_back(std::move(list));
         }
         num_docs = max_doc_id - 1;
+    }
+    {
+        // we might have to fix the doc_id space (I think!)
+        std::vector<int32_t> real_ids(max_doc_id + 1, -1);
+        for (size_t i = 0; i < idx.size(); i++) {
+            for (const auto& id : idx[i]) {
+                real_ids[id]++;
+            }
+        }
+        size_t cur_id = 0;
+        for (size_t i = 0; i < real_ids.size(); i++) {
+            if (real_ids[i] != -1)
+                real_ids[i] = cur_id++;
+        }
+        for (size_t i = 0; i < idx.size(); i++) {
+            for (size_t j = 0; j < idx[i].size(); j++) {
+                idx[i][j] = real_ids[idx[i][j]];
+            }
+        }
+        num_docs = cur_id;
     }
     std::cout << "num_docs = " << num_docs << std::endl;
     std::cout << "num_lists = " << num_lists << std::endl;
