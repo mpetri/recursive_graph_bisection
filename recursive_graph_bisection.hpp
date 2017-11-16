@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <random>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -29,6 +30,7 @@ struct partition_t {
 
 bipartite_graph construct_bipartite_graph(inverted_index& idx)
 {
+    timer t("construct_bipartite_graph");
     bipartite_graph bg;
     uint32_t max_doc_id = 0;
     for (size_t termid = 0; termid < idx.size(); termid++) {
@@ -48,6 +50,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
 
 inverted_index recreate_invidx(const bipartite_graph& bg)
 {
+    timer t("recreate_invidx");
     inverted_index idx;
     uint32_t max_qid_id = 0;
     for (size_t docid = 0; docid < bg.size(); docid++) {
@@ -67,6 +70,7 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
 /* random shuffle seems to do ok */
 partition_t initial_partition(docid_node* G, size_t n)
 {
+    timer t("initial_partition n=" + std::to_string(n));
     partition_t p;
     std::mt19937 rnd(n);
     std::shuffle(G, G + n, rnd);
@@ -95,6 +99,8 @@ struct move_gains_t {
 
 move_gains_t compute_move_gains(partition_t& P)
 {
+    timer t("compute_move_gains n1=" + std::to_string(P.n1) + " n2="
+        + std::to_string(P.n2));
     move_gains_t gains;
 
     // (1) compute current partition cost deg1/deg2
@@ -158,36 +164,37 @@ void swap_nodes(docid_node* a, docid_node* b)
 void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
 {
     // (1) create the initial partition. O(n)
-    std::cout << "initial_partition n=" << n << std::endl;
     auto partition = initial_partition(G, n);
 
     // (2) perform bisection. constant number of iterations
     for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
         // (2a) compute move gains
-        std::cout << "compute_move_gains n=" << n << std::endl;
         auto gains = compute_move_gains(partition);
 
         // (2a) sort by decreasing gain. O(n log n)
-        std::cout << "sort by decreasing gain n=" << n << std::endl;
-        std::sort(gains.V1.begin(), gains.V1.end());
-        std::sort(gains.V2.begin(), gains.V2.end());
-
+        {
+            timer t("sort by decreasing gain n=" + std::to_string(n));
+            std::sort(gains.V1.begin(), gains.V1.end());
+            std::sort(gains.V2.begin(), gains.V2.end());
+        }
         // (2b) swap. O(n)
-        std::cout << "swap n=" << n << std::endl;
         size_t num_swaps = 0;
-        auto itr_v1 = gains.V1.begin();
-        auto itr_v2 = gains.V2.begin();
-        while (itr_v1 != gains.V1.end() && itr_v2 != gains.V2.end()) {
-            if (itr_v1->gain + itr_v2->gain > 0) {
-                // maybe we need to do something here to make
-                // compute_move_gains() efficient?
-                swap_nodes(itr_v1->node, itr_v2->node);
-                num_swaps++;
-            } else {
-                break;
+        {
+            timer t("swap stuff");
+            auto itr_v1 = gains.V1.begin();
+            auto itr_v2 = gains.V2.begin();
+            while (itr_v1 != gains.V1.end() && itr_v2 != gains.V2.end()) {
+                if (itr_v1->gain + itr_v2->gain > 0) {
+                    // maybe we need to do something here to make
+                    // compute_move_gains() efficient?
+                    swap_nodes(itr_v1->node, itr_v2->node);
+                    num_swaps++;
+                } else {
+                    break;
+                }
+                ++itr_v1;
+                ++itr_v2;
             }
-            ++itr_v1;
-            ++itr_v2;
         }
 
         // (2c) converged?
@@ -197,8 +204,8 @@ void recursive_bisection(docid_node* G, size_t n, uint64_t depth = 0)
     }
 
     // (3) recurse. at most O(log n) recursion steps
-    std::cout << "recurse n=" << n << std::endl;
     if (depth + 1 <= constants::MAX_DEPTH) {
+        timer t("recurse n=" + std::to_string(n));
         if (partition.n1 > 1)
             recursive_bisection(partition.V1, partition.n1, depth + 1);
         if (partition.n2 > 1)
