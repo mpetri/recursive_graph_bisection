@@ -59,7 +59,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
         bg.graph[0].terms = bg.doc_contents.data();
         bg.graph[0].num_terms = doc_sizes[0];
         for (size_t i = 1; doc_sizes.size(); i++) {
-            bg.graph[i].terms = bg.graph[i].terms + bg.graph[i].num_terms;
+            bg.graph[i].terms = bg.graph[i - 1].terms + bg.graph[i].num_terms;
             bg.graph[i].num_terms = doc_sizes[i];
         }
     }
