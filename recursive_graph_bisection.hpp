@@ -140,7 +140,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     std::vector<uint32_t> deg1(num_queries, 0);
     std::vector<uint32_t> deg2(num_queries, 0);
     {
-        progress_bar progress("compute d1, d2", P.n1 + P.n2);
+        progress_bar progress("compute deg1, deg2", P.n1 + P.n2);
         for (size_t i = 0; i < P.n1; i++) {
             auto doc = P.V1 + i;
             for (size_t j = 0; j < doc->num_terms; j++) {
@@ -159,8 +159,8 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     }
 
     for (size_t i = 0; i < deg1.size(); i++) {
-        std::cout << "d1(" << i << ") = " << d1[i] << "d2(" << i
-                  << ") = " << d2[i] << std::endl;
+        std::cout << "deg1(" << i << ") = " << deg1[i] << "deg2(" << i
+                  << ") = " << deg2[i] << std::endl;
     }
 
     // (2) compute gains from moving docs
@@ -178,6 +178,9 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
                 + ((d2 + 1) * logf(float(P.n2) / ((d2 + 1) + 1))));
         }
         float gain = before_move - after_move;
+        std::cout << "before_move = " << before_move
+                  << " after_move = " << before_move << " gain = " << gain
+                  << std::endl;
         gains.V1.emplace_back(gain, doc);
     }
 
