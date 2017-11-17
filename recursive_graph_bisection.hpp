@@ -162,6 +162,22 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
     }
 }
 
+void compute_gains(docid_node* docs, size_t n, size_t n1, size_t n2,
+    const std::vector<uint32_t>& deg1, const std::vector<uint32_t>& deg2,
+    std::vector<move_gain>& res)
+{
+    timer t("compute gains");
+    cilk::reducer<cilk::op_list_append<move_gain> > gr;
+    cilk_for(size_t i = 0; i < n; i++)
+    {
+        auto doc = docs + i;
+        gr->push_back(compute_single_gain(deg1, deg2, doc, n1, n2));
+    }
+    const auto& gl = gr.get_value();
+    res.reserve(gl.size());
+    res.insert(res.end(), gl.begin(), gl.end());
+}
+
 move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 {
     timer t("compute_move_gains n1=" + std::to_string(P.n1) + " n2="
@@ -179,28 +195,9 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     }
 
     // (2) compute gains from moving docs
-    {
-        timer t("compute gains V1");
-        cilk::reducer<cilk::op_list_append<move_gain> > gr;
-        cilk_for(size_t i = 0; i < P.n1; i++)
-        {
-            auto doc = P.V1 + i;
-            gr->push_back(compute_single_gain(deg1, deg2, doc, P.n1, P.n2));
-        }
-        const auto& gl = gr.get_value();
-        gains.V1 = std::vector<move_gain>(gl.begin(), gl.end());
-    }
-    {
-        timer t("compute gains V2");
-        cilk::reducer<cilk::op_list_append<move_gain> > gr;
-        cilk_for(size_t i = 0; i < P.n2; i++)
-        {
-            auto doc = P.V2 + i;
-            gr->push_back(compute_single_gain(deg1, deg2, doc, P.n1, P.n2));
-        }
-        const auto& gl = gr.get_value();
-        gains.V2 = std::vector<move_gain>(gl.begin(), gl.end());
-    }
+    cilk_spawn compute_gains(P.V1, P.n1, P.n1, P.n2, deg1, deg2, gains.V1);
+    cilk_spawn compute_gains(P.V2, P.n2, P.n1, P.n2, deg1, deg2, gains.V2);
+    cilk_sync;
 
     return gains;
 }
@@ -255,7 +252,7 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
         }
 
         tsfprintff(stdout, "STOP ITERATION %d/%d depth = %d swaps = %ld\n",
-            cur_iter, constants::MAX_ITER, (long)num_swaps);
+            cur_iter, constants::MAX_ITER, depth, (long)num_swaps);
 
         // (2c) converged?
         if (num_swaps == 0) {
