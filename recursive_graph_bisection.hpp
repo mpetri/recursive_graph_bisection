@@ -13,8 +13,8 @@
 #include <cilk/reducer_list.h>
 
 namespace constants {
-const uint64_t MAX_DEPTH = 13;
-const uint64_t MAX_ITER = 10;
+const uint64_t MAX_DEPTH = 15;
+const uint64_t MAX_ITER = 20;
 }
 
 struct docid_node {
