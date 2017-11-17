@@ -224,8 +224,9 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
         // (2a) sort by decreasing gain. O(n log n)
         {
             timer t("sort by decreasing gain n=" + std::to_string(n));
-            std::sort(gains.V1.begin(), gains.V1.end());
-            std::sort(gains.V2.begin(), gains.V2.end());
+            cilk_spawn std::sort(gains.V1.begin(), gains.V1.end());
+            cilk_spawn std::sort(gains.V2.begin(), gains.V2.end());
+            cilk_sync;
         }
 
         std::cout << "MAX GAIN V1 " << gains.V1.front().gain << std::endl;
