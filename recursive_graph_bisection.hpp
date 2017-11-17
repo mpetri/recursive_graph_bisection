@@ -167,7 +167,6 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
             for (size_t j = 0; j < doc->num_terms; j++) {
                 deg1[doc->terms[j]]++;
             }
-            ++progress;
         }
 
         for (size_t i = 0; i < P.n2; i++) {
@@ -175,7 +174,6 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
             for (size_t j = 0; j < doc->num_terms; j++) {
                 deg2[doc->terms[j]]++;
             }
-            ++progress;
         }
     }
 
