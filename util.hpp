@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 using namespace std::chrono;
@@ -13,21 +14,32 @@ using postings_list = std::vector<uint32_t>;
 
 using inverted_index = std::vector<postings_list>;
 
+int tsfprintff(FILE* f, const char* format, ...)
+{
+    static std::mutex pmutex;
+    std::lock_guard<std::mutex> lock(pmutex);
+    va_list args;
+    va_start(args, format);
+    int ret = vfprintf(f, format, args);
+    va_end(args);
+    fflush(f);
+    return ret;
+}
+
 struct timer {
     high_resolution_clock::time_point start;
     std::string name;
     timer(const std::string& _n)
         : name(_n)
     {
-        std::cerr << "START(" << name << ")" << std::endl;
+        tsfprintff(stdout, "START(%s)\n", name.c_str());
         start = high_resolution_clock::now();
     }
     ~timer()
     {
         auto stop = high_resolution_clock::now();
-        std::cerr << "STOP(" << name << ") - "
-                  << duration_cast<milliseconds>(stop - start).count() / 1000.0f
-                  << " sec" << std::endl;
+        tsfprintff(stdout, "STOP(%s) - %f sec\n", name.c_str(),
+            duration_cast<milliseconds>(stop - start).count() / 1000.0f);
     }
 };
 
@@ -42,11 +54,10 @@ struct progress_bar {
         , cur_percent(0)
     {
         std::cout << str << ":" << std::endl;
-        fprintf(stdout, "[  0/100] |");
+        tsfprintff(stdout, "[  0/100] |");
         for (size_t i = 0; i < 50; i++)
-            fprintf(stdout, " ");
-        fprintf(stdout, "|\r");
-        fflush(stdout);
+            tsfprintff(stdout, " ");
+        tsfprintff(stdout, "|\r");
     }
     progress_bar& operator++()
     {
@@ -55,25 +66,23 @@ struct progress_bar {
         size_t cp = fcp;
         if (cp != cur_percent) {
             cur_percent = cp;
-            fprintf(stdout, "[%3d/100] |", (int)cur_percent);
+            tsfprintff(stdout, "[%3d/100] |", (int)cur_percent);
             size_t print_percent = cur_percent / 2;
             for (size_t i = 0; i < print_percent; i++)
-                fprintf(stdout, "=");
-            fprintf(stdout, ">");
+                tsfprintff(stdout, "=");
+            tsfprintff(stdout, ">");
             for (size_t i = print_percent; i < 50; i++)
-                fprintf(stdout, " ");
-            fprintf(stdout, "|\r");
-            fflush(stdout);
+                tsfprintff(stdout, " ");
+            tsfprintff(stdout, "|\r");
         }
         return *this;
     }
     ~progress_bar()
     {
-        fprintf(stdout, "[100/100] |");
+        tsfprintff(stdout, "[100/100] |");
         for (size_t i = 0; i < 50; i++)
-            fprintf(stdout, "=");
-        fprintf(stdout, ">|\n");
-        fflush(stdout);
+            tsfprintff(stdout, "=");
+        tsfprintff(stdout, ">|\n");
     }
 };
 

@@ -14,7 +14,7 @@
 
 namespace constants {
 const uint64_t MAX_DEPTH = 15;
-const uint64_t MAX_ITER = 20;
+const int MAX_ITER = 20;
 }
 
 struct docid_node {
@@ -218,7 +218,7 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
     auto partition = initial_partition(G, n);
 
     // (2) perform bisection. constant number of iterations
-    for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
+    for (int cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
         std::cout << "START ITERATION " << cur_iter << "/"
                   << constants::MAX_ITER << " depth = " << depth << std::endl;
         // (2a) compute move gains
@@ -254,9 +254,8 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
             }
         }
 
-        std::cout << "STOP ITERATION " << cur_iter << "/" << constants::MAX_ITER
-                  << " depth = " << depth << " swaps = " << num_swaps
-                  << std::endl;
+        tsfprintff(stdout, "STOP ITERATION %d/%d depth = %d swaps = %ld\n",
+            cur_iter, constants::MAX_ITER, (long)num_swaps);
 
         // (2c) converged?
         if (num_swaps == 0) {
