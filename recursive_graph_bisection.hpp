@@ -152,6 +152,16 @@ move_gain compute_single_gain(const std::vector<uint32_t>& deg1,
     return move_gain(gain, doc);
 }
 
+void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
+{
+    for (size_t i = 0; i < n; i++) {
+        auto doc = docs + i;
+        for (size_t j = 0; j < doc->num_terms; j++) {
+            deg[doc->terms[j]]++;
+        }
+    }
+}
+
 move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 {
     timer t("compute_move_gains n1=" + std::to_string(P.n1) + " n2="
@@ -163,22 +173,9 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     std::vector<uint32_t> deg2(num_queries, 0);
     {
         timer t("compute deg1/deg2");
-        cilk_spawn deg1 = compute_deg(P.V1, P.n1);
-        cilk_spawn deg2 = compute_deg(P.V2, P.n2);
+        cilk_spawn compute_deg(P.V1, P.n1, deg1);
+        cilk_spawn compute_deg(P.V2, P.n2, deg2);
         cilk_sync;
-        for (size_t i = 0; i < P.n1; i++) {
-            auto doc = P.V1 + i;
-            for (size_t j = 0; j < doc->num_terms; j++) {
-                deg1[doc->terms[j]]++;
-            }
-        }
-
-        for (size_t i = 0; i < P.n2; i++) {
-            auto doc = P.V2 + i;
-            for (size_t j = 0; j < doc->num_terms; j++) {
-                deg2[doc->terms[j]]++;
-            }
-        }
     }
 
     // (2) compute gains from moving docs
