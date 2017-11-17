@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <execution>
 
 #include "util.hpp"
 
@@ -61,7 +62,7 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
         bg.graph[0].terms = bg.doc_contents.data();
         bg.graph[0].num_terms = doc_sizes[0];
         for (size_t i = 1; i < doc_sizes.size(); i++) {
-            bg.graph[i].terms = bg.graph[i - 1].terms + bg.graph[i].num_terms;
+            bg.graph[i].terms = bg.graph[i - 1].terms + bg.graph[i - 1].num_terms;
             bg.graph[i].num_terms = doc_sizes[i];
         }
     }
@@ -158,10 +159,12 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         }
     }
 
+/*
     for (size_t i = 0; i < deg1.size(); i++) {
         std::cout << "deg1(" << i << ") = " << deg1[i] << " deg2(" << i
                   << ") = " << deg2[i] << std::endl;
     }
+*/
 
     // (2) compute gains from moving docs
     for (size_t i = 0; i < P.n1; i++) {
@@ -174,17 +177,14 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
             double d2 = deg2[q];
             before_move += ((d1 * log2(double(P.n1) / (d1 + 1)))
                 + (d2 * log2(double(P.n2) / (d2 + 1))));
-            after_move += (((d1 - 1) * logf(double(P.n1) / ((d1 - 1) + 1)))
+            after_move += (((d1 - 1) * log2(double(P.n1) / ((d1 - 1) + 1)))
                 + ((d2 + 1) * log2(double(P.n2) / ((d2 + 1) + 1))));
+
+            double g2 = before_move - after_move;
         }
         double gain = before_move - after_move;
-
-        if (gain > 0) {
-            std::cout << "before_move = " << before_move
-                      << " after_move = " << after_move << " gain = " << gain
-                      << std::endl;
-            gains.V1.emplace_back(gain, doc);
-        }
+        // Do we need to worry about < 0?
+        gains.V1.emplace_back(gain, doc);
     }
 
     for (size_t i = 0; i < P.n2; i++) {
@@ -201,12 +201,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
                 + ((d2 - 1) * log2(double(P.n2) / ((d2 - 1) + 1))));
         }
         double gain = before_move - after_move;
-        if (gain > 0) {
-            std::cout << "before_move = " << before_move
-                      << " after_move = " << after_move << " gain = " << gain
-                      << std::endl;
-            gains.V2.emplace_back(gain, doc);
-        }
+        gains.V2.emplace_back(gain, doc);
     }
 
     return gains;
@@ -216,6 +211,7 @@ void swap_nodes(docid_node* a, docid_node* b)
 {
     std::swap(a->initial_id, b->initial_id);
     std::swap(a->terms, b->terms);
+    std::swap(a->num_terms, b->num_terms);
 }
 
 void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
@@ -231,8 +227,8 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
         // (2a) sort by decreasing gain. O(n log n)
         {
             timer t("sort by decreasing gain n=" + std::to_string(n));
-            std::sort(gains.V1.begin(), gains.V1.end());
-            std::sort(gains.V2.begin(), gains.V2.end());
+            std::sort(std::execution::par, gains.V1.begin(), gains.V1.end());
+            std::sort(std::execution::par, gains.V2.begin(), gains.V2.end());
         }
         // (2b) swap. O(n)
         size_t num_swaps = 0;
