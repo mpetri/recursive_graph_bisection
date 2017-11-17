@@ -279,7 +279,10 @@ inverted_index reorder_docids_graph_bisection(inverted_index& invidx)
     std::cout << "construct_bipartite_graph" << std::endl;
     auto bg = construct_bipartite_graph(invidx);
 
-    recursive_bisection(bg.graph.data(), bg.num_queries, bg.graph.size());
+    {
+        timer t("recursive_bisection");
+        recursive_bisection(bg.graph.data(), bg.num_queries, bg.graph.size());
+    }
 
     std::cout << "recreate_invidx" << std::endl;
     return recreate_invidx(bg);
