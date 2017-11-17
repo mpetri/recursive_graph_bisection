@@ -64,7 +64,8 @@ bipartite_graph construct_bipartite_graph(inverted_index& idx)
         bg.graph[0].terms = bg.doc_contents.data();
         bg.graph[0].num_terms = doc_sizes[0];
         for (size_t i = 1; i < doc_sizes.size(); i++) {
-            bg.graph[i].terms = bg.graph[i - 1].terms + bg.graph[i].num_terms;
+            bg.graph[i].terms
+                = bg.graph[i - 1].terms + bg.graph[i - 1].num_terms;
             bg.graph[i].num_terms = doc_sizes[i];
         }
     }
@@ -162,6 +163,9 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     std::vector<uint32_t> deg2(num_queries, 0);
     {
         timer t("compute deg1/deg2");
+        cilk_spawn deg1 = compute_deg(P.V1, P.n1);
+        cilk_spawn deg2 = compute_deg(P.V2, P.n2);
+        cilk_sync;
         for (size_t i = 0; i < P.n1; i++) {
             auto doc = P.V1 + i;
             for (size_t j = 0; j < doc->num_terms; j++) {
@@ -179,7 +183,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 
     // (2) compute gains from moving docs
     {
-        timer t("compute gains");
+        timer t("compute gains V1");
         cilk::reducer<cilk::op_list_append<move_gain> > gr;
         cilk_for(size_t i = 0; i < P.n1; i++)
         {
@@ -190,6 +194,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         gains.V1 = std::vector<move_gain>(gl.begin(), gl.end());
     }
     {
+        timer t("compute gains V2");
         cilk::reducer<cilk::op_list_append<move_gain> > gr;
         cilk_for(size_t i = 0; i < P.n2; i++)
         {
@@ -207,6 +212,7 @@ void swap_nodes(docid_node* a, docid_node* b)
 {
     std::swap(a->initial_id, b->initial_id);
     std::swap(a->terms, b->terms);
+    std::swap(a->num_terms, b->num_terms);
 }
 
 void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
