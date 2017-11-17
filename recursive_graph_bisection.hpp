@@ -9,6 +9,9 @@
 
 #include "util.hpp"
 
+#include <cilk/cilk.h>
+//#include <cilk/reducer_vector.h>
+
 namespace constants {
 const uint64_t MAX_DEPTH = 13;
 const uint64_t MAX_ITER = 10;
@@ -130,6 +133,24 @@ struct move_gains_t {
     std::vector<move_gain> V2;
 };
 
+move_gain compute_single_gain(const std::vector<uint32_t>& deg1,
+    const std::vector<uint32_t>& deg2, docid_node* doc, double n1, double n2)
+{
+    double before_move = 0.0;
+    double after_move = 0.0;
+    for (size_t j = 0; j < doc->num_terms; j++) {
+        auto q = doc->terms[j];
+        double d1 = deg1[q];
+        double d2 = deg2[q];
+        before_move
+            += ((d1 * log2(n1 / (d1 + 1))) + (d2 * log2(n2 / (d2 + 1))));
+        after_move += (((d1 - 1) * log2(n1 / ((d1 - 1) + 1)))
+            + ((d2 + 1) * log2(n2 / ((d2 + 1) + 1))));
+    }
+    double gain = before_move - after_move;
+    return move_gain(gain, doc);
+}
+
 move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 {
     timer t("compute_move_gains n1=" + std::to_string(P.n1) + " n2="
@@ -164,28 +185,13 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     }
 
     // (2) compute gains from moving docs
-    for (size_t i = 0; i < P.n1; i++) {
+    cilk::reducer<cilk::op_vector<move_gain> > gr;
+    cilk_for(size_t i = 0; i < P.n1; i++)
+    {
         auto doc = P.V1 + i;
-        double before_move = 0.0;
-        double after_move = 0.0;
-        for (size_t j = 0; j < doc->num_terms; j++) {
-            auto q = doc->terms[j];
-            double d1 = deg1[q];
-            double d2 = deg2[q];
-            before_move += ((d1 * log2(double(P.n1) / (d1 + 1)))
-                + (d2 * log2(double(P.n2) / (d2 + 1))));
-            after_move += (((d1 - 1) * logf(double(P.n1) / ((d1 - 1) + 1)))
-                + ((d2 + 1) * log2(double(P.n2) / ((d2 + 1) + 1))));
-        }
-        double gain = before_move - after_move;
-
-        if (gain > 0) {
-            std::cout << "before_move = " << before_move
-                      << " after_move = " << after_move << " gain = " << gain
-                      << std::endl;
-            gains.V1.emplace_back(gain, doc);
-        }
+        gr->push_back(compute_single_gain(deg1, deg2, doc, P.n1, P.n2));
     }
+    gr.move_out(gains.V2);
 
     for (size_t i = 0; i < P.n2; i++) {
         auto doc = P.V2 + i;
@@ -202,9 +208,6 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         }
         double gain = before_move - after_move;
         if (gain > 0) {
-            std::cout << "before_move = " << before_move
-                      << " after_move = " << after_move << " gain = " << gain
-                      << std::endl;
             gains.V2.emplace_back(gain, doc);
         }
     }
@@ -264,9 +267,12 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
     if (depth + 1 <= constants::MAX_DEPTH) {
         timer t("recurse n=" + std::to_string(n));
         if (partition.n1 > 1)
-            recursive_bisection(partition.V1, nq, partition.n1, depth + 1);
+            cilk_spawn recursive_bisection(
+                partition.V1, nq, partition.n1, depth + 1);
         if (partition.n2 > 1)
-            recursive_bisection(partition.V2, nq, partition.n2, depth + 1);
+            cilk_spawn recursive_bisection(
+                partition.V2, nq, partition.n2, depth + 1);
+        cilk_sync;
     }
 }
 
