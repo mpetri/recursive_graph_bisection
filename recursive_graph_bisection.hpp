@@ -219,6 +219,8 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
 
     // (2) perform bisection. constant number of iterations
     for (uint64_t cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
+        std::cout << "START ITERATION " << cur_iter << "/"
+                  << constants::MAX_ITER << " depth = " << depth << std::endl;
         // (2a) compute move gains
         auto gains = compute_move_gains(partition, nq);
 
@@ -228,6 +230,10 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
             std::sort(gains.V1.begin(), gains.V1.end());
             std::sort(gains.V2.begin(), gains.V2.end());
         }
+
+        std::cout << "MAX GAIN V1 " << gains.V1.front().gain << std::endl;
+        std::cout << "MAX GAIN V2 " << gains.V2.front().gain << std::endl;
+
         // (2b) swap. O(n)
         size_t num_swaps = 0;
         {
@@ -247,6 +253,10 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
                 ++itr_v2;
             }
         }
+
+        std::cout << "STOP ITERATION " << cur_iter << "/" << constants::MAX_ITER
+                  << " depth = " << depth << " swaps = " << num_swaps
+                  << std::endl;
 
         // (2c) converged?
         if (num_swaps == 0) {
