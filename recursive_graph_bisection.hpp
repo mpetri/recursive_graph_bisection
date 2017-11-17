@@ -10,7 +10,7 @@
 #include "util.hpp"
 
 #include <cilk/cilk.h>
-//#include <cilk/reducer_vector.h>
+#include <cilk/reducer_list.h>
 
 namespace constants {
 const uint64_t MAX_DEPTH = 13;
@@ -161,7 +161,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     std::vector<uint32_t> deg1(num_queries, 0);
     std::vector<uint32_t> deg2(num_queries, 0);
     {
-        progress_bar progress("compute deg1, deg2", P.n1 + P.n2);
+        timer t("compute deg1/deg2");
         for (size_t i = 0; i < P.n1; i++) {
             auto doc = P.V1 + i;
             for (size_t j = 0; j < doc->num_terms; j++) {
@@ -179,37 +179,27 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
         }
     }
 
-    for (size_t i = 0; i < deg1.size(); i++) {
-        std::cout << "deg1(" << i << ") = " << deg1[i] << " deg2(" << i
-                  << ") = " << deg2[i] << std::endl;
-    }
-
     // (2) compute gains from moving docs
-    cilk::reducer<cilk::op_vector<move_gain> > gr;
-    cilk_for(size_t i = 0; i < P.n1; i++)
     {
-        auto doc = P.V1 + i;
-        gr->push_back(compute_single_gain(deg1, deg2, doc, P.n1, P.n2));
+        timer t("compute gains");
+        cilk::reducer<cilk::op_list_append<move_gain> > gr;
+        cilk_for(size_t i = 0; i < P.n1; i++)
+        {
+            auto doc = P.V1 + i;
+            gr->push_back(compute_single_gain(deg1, deg2, doc, P.n1, P.n2));
+        }
+        const auto& gl = gr.get_value();
+        gains.V1 = std::vector<move_gain>(gl.begin(), gl.end());
     }
-    gr.move_out(gains.V2);
-
-    for (size_t i = 0; i < P.n2; i++) {
-        auto doc = P.V2 + i;
-        double before_move = 0.0;
-        double after_move = 0.0;
-        for (size_t j = 0; j < doc->num_terms; j++) {
-            auto q = doc->terms[j];
-            double d1 = deg1[q];
-            double d2 = deg2[q];
-            before_move += ((d1 * log2(double(P.n1) / (d1 + 1)))
-                + (d2 * log2(double(P.n2) / (d2 + 1))));
-            after_move += (((d1 + 1) * log2(double(P.n1) / ((d1 + 1) + 1)))
-                + ((d2 - 1) * log2(double(P.n2) / ((d2 - 1) + 1))));
+    {
+        cilk::reducer<cilk::op_list_append<move_gain> > gr;
+        cilk_for(size_t i = 0; i < P.n2; i++)
+        {
+            auto doc = P.V2 + i;
+            gr->push_back(compute_single_gain(deg1, deg2, doc, P.n1, P.n2));
         }
-        double gain = before_move - after_move;
-        if (gain > 0) {
-            gains.V2.emplace_back(gain, doc);
-        }
+        const auto& gl = gr.get_value();
+        gains.V2 = std::vector<move_gain>(gl.begin(), gl.end());
     }
 
     return gains;
