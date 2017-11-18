@@ -196,7 +196,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 
     // (2) compute gains from moving docs
     cilk_spawn compute_gains(P.V1, P.n1, P.n1, P.n2, deg1, deg2, gains.V1);
-    cilk_spawn compute_gains(P.V2, P.n2, P.n1, P.n2, deg1, deg2, gains.V2);
+    cilk_spawn compute_gains(P.V2, P.n2, P.n2, P.n1, deg2, deg1, gains.V2);
     cilk_sync;
 
     return gains;
