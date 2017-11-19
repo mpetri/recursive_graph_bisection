@@ -12,7 +12,18 @@ using namespace std::chrono;
 
 using postings_list = std::vector<uint32_t>;
 
-using inverted_index = std::vector<postings_list>;
+struct inverted_index {
+    uint32_t num_docs;
+    std::vector<postings_list> docids;
+    std::vector<postings_list> freqs;
+    size_t resize(size_t new_size)
+    {
+        docids.resize(new_size);
+        freqs.resize(new_size);
+    }
+
+    size_t size() const { return docids.size(); }
+};
 
 int tsfprintff(FILE* f, const char* format, ...)
 {
@@ -121,6 +132,14 @@ FILE* fopen_or_fail(std::string file_name, const char* mode)
     return out_file;
 }
 
+void fclose_or_fail(FILE* f)
+{
+    int ret = fclose(f);
+    if (ret != 0) {
+        quit("closing file failed");
+    }
+}
+
 uint32_t read_u32(FILE* f)
 {
     uint32_t x;
@@ -149,15 +168,38 @@ std::vector<uint32_t> read_uint32_list(FILE* f)
         return std::vector<uint32_t>();
     std::vector<uint32_t> list(list_len);
     read_u32s(f, list.data(), list_len);
-    // for (uint32_t j = 0; j < list_len; j++) {
-    //     list[j]++; // ensure there are no 0s
-    // }
     return list;
 }
 
-inverted_index read_d2si_docs(std::string docs_file, int min_list_len)
+size_t write_u32(FILE* f, uint32_t x)
+{
+    size_t ret = fwrite(&x, sizeof(uint32_t), 1u, f);
+    if (ret != 1u) {
+        quit("writing byte to file: %u != %u", ret, 1u);
+    }
+    return sizeof(uint32_t);
+}
+
+size_t write_u32s(FILE* f, uint32_t* buf, size_t n)
+{
+    size_t ret = fwrite(buf, sizeof(uint32_t), n, f);
+    if (ret != n) {
+        quit("writing byte to file: %u != %u", ret, n);
+    }
+    return n * sizeof(uint32_t);
+}
+
+size_t write_uint32_list(FILE* f, std::vector<uint32_t>& list)
+{
+    size_t written_bytes = write_u32(f, list.size());
+    written_bytes += write_u32s(f, list.data(), list.size());
+    return written_bytes;
+}
+
+inverted_index read_d2si_files(std::string ds2i_prefix)
 {
     inverted_index idx;
+    std::string docs_file = ds2i_prefix + ".docs";
     timer t("read input list from " + docs_file);
     auto df = fopen_or_fail(docs_file, "rb");
     size_t num_docs = 0;
@@ -171,37 +213,59 @@ inverted_index read_d2si_docs(std::string docs_file, int min_list_len)
         while (!feof(df)) {
             const auto& list = read_uint32_list(df);
             size_t n = list.size();
-            if (n < min_list_len)
-                continue;
+            if (n == 0) {
+                break;
+            }
             max_doc_id = std::max(max_doc_id, list.back());
             num_lists++;
             num_postings += n;
-            idx.emplace_back(std::move(list));
+            idx.docids.emplace_back(std::move(list));
         }
         num_docs = max_doc_id - 1;
     }
+    fclose_or_fail(df);
+    std::string freqs_file = ds2i_prefix + ".freqs";
+    auto ff = fopen_or_fail(freqs_file, "rb");
     {
-        // we might have to fix the doc_id space (I think!)
-        std::vector<int32_t> real_ids(max_doc_id + 1, -1);
-        for (size_t i = 0; i < idx.size(); i++) {
-            for (const auto& id : idx[i]) {
-                real_ids[id]++;
+        while (!feof(ff)) {
+            const auto& list = read_uint32_list(ff);
+            size_t n = list.size();
+            if (n == 0) {
+                break;
             }
+            idx.freqs.emplace_back(std::move(list));
         }
-        size_t cur_id = 0;
-        for (size_t i = 0; i < real_ids.size(); i++) {
-            if (real_ids[i] != -1)
-                real_ids[i] = cur_id++;
-        }
-        for (size_t i = 0; i < idx.size(); i++) {
-            for (size_t j = 0; j < idx[i].size(); j++) {
-                idx[i][j] = real_ids[idx[i][j]];
-            }
-        }
-        num_docs = cur_id;
     }
+    fclose_or_fail(ff);
+    idx.num_docs = num_docs;
     std::cout << "num_docs = " << num_docs << std::endl;
     std::cout << "num_lists = " << num_lists << std::endl;
     std::cout << "num_postings = " << num_postings << std::endl;
     return idx;
+}
+
+void write_d2si_files(inverted_index& idx, std::string ds2i_out_prefix)
+{
+    std::string docs_file = ds2i_out_prefix + ".docs";
+    std::string freqs_file = ds2i_out_prefix + ".freqs";
+    {
+        auto df = fopen_or_fail(docs_file, "wb");
+        {
+            // ds2i: 1st list contains num docs
+            std::vector<uint32_t> tmp(1);
+            tmp[0] = idx.num_docs;
+            write_uint32_list(df, tmp);
+        }
+        for (size_t i = 0; i < idx.docids.size(); i++) {
+            write_uint32_list(df, idx.docids[i]);
+        }
+        fclose_or_fail(df);
+    }
+    {
+        auto ff = fopen_or_fail(docs_file, "wb");
+        for (size_t i = 0; i < idx.freqs.size(); i++) {
+            write_uint32_list(ff, idx.freqs[i]);
+        }
+        fclose_or_fail(ff);
+    }
 }
