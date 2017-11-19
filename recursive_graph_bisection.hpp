@@ -68,6 +68,7 @@ bipartite_graph construct_bipartite_graph(
                 max_doc_id = std::max(max_doc_id, doc_id);
                 if (doc_sizes.size() <= max_doc_id) {
                     doc_sizes.resize(1 + max_doc_id * 2);
+                    doc_sizes_non_pruned.resize(1 + max_doc_id * 2);
                 }
                 if (plist.size() >= min_list_len) {
                     doc_sizes[doc_id]++;
@@ -97,7 +98,7 @@ bipartite_graph construct_bipartite_graph(
         }
     }
     {
-        progress_bar progress("creating forward index", idx.size() * 2);
+        progress_bar progress("creating forward index", idx.size());
         std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
         for (size_t termid = 0; termid < idx.docids.size(); termid++) {
             const auto& dlist = idx.docids[termid];
@@ -109,8 +110,8 @@ bipartite_graph construct_bipartite_graph(
                     bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
                     bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
                 }
+                ++progress;
             }
-            ++progress;
         }
         for (size_t termid = 0; termid < idx.docids.size(); termid++) {
             const auto& dlist = idx.docids[termid];
@@ -122,8 +123,8 @@ bipartite_graph construct_bipartite_graph(
                     bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
                     bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
                 }
+                ++progress;
             }
-            ++progress;
         }
     }
     {
