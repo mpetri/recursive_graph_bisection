@@ -12,12 +12,15 @@ int main(int argc, char** argv)
     std::string ds2i_out_prefix = argv[2];
     size_t min_list_len = atoi(argv[3]);
 
-    auto invidx = read_d2si_files(ds2i_prefix);
+    auto invidx = read_ds2i_files(ds2i_prefix);
 
     auto reordered_invidx
         = reorder_docids_graph_bisection(invidx, min_list_len);
 
-    write_d2si_files(reordered_invidx, ds2i_out_prefix);
+    {
+        timer t("write ds2i files");
+        write_ds2i_files(reordered_invidx, ds2i_out_prefix);
+    }
 
     return EXIT_SUCCESS;
 }

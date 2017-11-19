@@ -215,7 +215,7 @@ size_t write_uint32_list(FILE* f, std::vector<uint32_t>& list)
     return written_bytes;
 }
 
-inverted_index read_d2si_files(std::string ds2i_prefix)
+inverted_index read_ds2i_files(std::string ds2i_prefix)
 {
     inverted_index idx;
     std::string docs_file = ds2i_prefix + ".docs";
@@ -263,7 +263,7 @@ inverted_index read_d2si_files(std::string ds2i_prefix)
     return idx;
 }
 
-void write_d2si_files(inverted_index& idx, std::string ds2i_out_prefix)
+void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
 {
     std::string docs_file = ds2i_out_prefix + ".docs";
     std::string freqs_file = ds2i_out_prefix + ".freqs";
@@ -281,7 +281,7 @@ void write_d2si_files(inverted_index& idx, std::string ds2i_out_prefix)
         fclose_or_fail(df);
     }
     {
-        auto ff = fopen_or_fail(docs_file, "wb");
+        auto ff = fopen_or_fail(freqs_file, "wb");
         for (size_t i = 0; i < idx.freqs.size(); i++) {
             write_uint32_list(ff, idx.freqs[i]);
         }
