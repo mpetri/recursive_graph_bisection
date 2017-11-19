@@ -259,7 +259,8 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     return gains;
 }
 
-void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
+void recursive_bisection(progress_bar& progress, docid_node* G, size_t nq,
+    size_t n, uint64_t depth = 0)
 {
     // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
@@ -305,12 +306,18 @@ void recursive_bisection(docid_node* G, size_t nq, size_t n, uint64_t depth = 0)
     if (depth + 1 <= constants::MAX_DEPTH) {
         if (partition.n1 > 1)
             cilk_spawn recursive_bisection(
-                partition.V1, nq, partition.n1, depth + 1);
+                progress, partition.V1, nq, partition.n1, depth + 1);
         if (partition.n2 > 1)
             cilk_spawn recursive_bisection(
-                partition.V2, nq, partition.n2, depth + 1);
+                progress, partition.V2, nq, partition.n2, depth + 1);
+
         cilk_sync;
+        if (partition.n1 == 1)
+            progress.done(1);
+        if (partition.n2 == 1)
+            progress.done(1);
     } else {
+        progress.done(n);
     }
 }
 
@@ -322,7 +329,8 @@ inverted_index reorder_docids_graph_bisection(
 
     {
         timer t("recursive_bisection");
-        recursive_bisection(bg.graph.data(), bg.num_queries, bg.num_docs);
+        progress_bar bp("recursive_bisection", bg.num_docs);
+        recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs);
     }
 
     std::cout << "recreate_invidx" << std::endl;

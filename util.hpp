@@ -88,6 +88,25 @@ struct progress_bar {
         }
         return *this;
     }
+    void done(size_t num)
+    {
+        static std::mutex pmutex;
+        std::lock_guard<std::mutex> lock(pmutex);
+        current += num;
+        float fcp = float(current) / float(total) * 100;
+        size_t cp = fcp;
+        if (cp != cur_percent) {
+            cur_percent = cp;
+            tsfprintff(stdout, "[%3d/100] |", (int)cur_percent);
+            size_t print_percent = cur_percent / 2;
+            for (size_t i = 0; i < print_percent; i++)
+                tsfprintff(stdout, "=");
+            tsfprintff(stdout, ">");
+            for (size_t i = print_percent; i < 50; i++)
+                tsfprintff(stdout, " ");
+            tsfprintff(stdout, "|\r");
+        }
+    }
     ~progress_bar()
     {
         tsfprintff(stdout, "[100/100] |");
