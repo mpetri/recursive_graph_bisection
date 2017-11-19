@@ -80,6 +80,7 @@ bipartite_graph construct_bipartite_graph(
         bg.doc_contents.resize(doc_size_sum);
         bg.doc_freqs.resize(doc_size_sum);
         doc_sizes.resize(max_doc_id + 1);
+        doc_sizes_non_pruned.resize(max_doc_id + 1);
         bg.graph.resize(max_doc_id + 1);
         bg.num_docs_inc_empty = max_doc_id + 1;
         bg.graph[0].terms = bg.doc_contents.data();
