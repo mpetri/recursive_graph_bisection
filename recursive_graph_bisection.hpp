@@ -98,34 +98,46 @@ bipartite_graph construct_bipartite_graph(
         }
     }
     {
-        progress_bar progress("creating forward index", idx.size());
+
         std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
-        for (size_t termid = 0; termid < idx.docids.size(); termid++) {
-            const auto& dlist = idx.docids[termid];
-            const auto& flist = idx.freqs[termid];
-            if (dlist.size() >= min_list_len) {
-                for (size_t pos = 0; pos < dlist.size(); pos++) {
-                    const auto& doc_id = dlist[pos];
-                    bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
-                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+        size_t num_large_lists = 0;
+        size_t num_small_lists = 0;
+        {
+            progress_bar progress("creating forward index", idx.size() * 2);
+            for (size_t termid = 0; termid < idx.docids.size(); termid++) {
+                const auto& dlist = idx.docids[termid];
+                const auto& flist = idx.freqs[termid];
+                if (dlist.size() >= min_list_len) {
+                    for (size_t pos = 0; pos < dlist.size(); pos++) {
+                        const auto& doc_id = dlist[pos];
+                        bg.graph[doc_id].initial_id = doc_id;
+                        bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
+                        bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+                    }
+                    ++num_large_lists;
+                }
+                ++progress;
+            }
+
+            for (size_t termid = 0; termid < idx.docids.size(); termid++) {
+                const auto& dlist = idx.docids[termid];
+                const auto& flist = idx.freqs[termid];
+                if (dlist.size() < min_list_len) {
+                    for (size_t pos = 0; pos < dlist.size(); pos++) {
+                        const auto& doc_id = dlist[pos];
+                        bg.graph[doc_id].initial_id = doc_id;
+                        bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
+                        bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+                    }
+                    ++num_small_lists;
                 }
                 ++progress;
             }
         }
-        for (size_t termid = 0; termid < idx.docids.size(); termid++) {
-            const auto& dlist = idx.docids[termid];
-            const auto& flist = idx.freqs[termid];
-            if (dlist.size() < min_list_len) {
-                for (size_t pos = 0; pos < dlist.size(); pos++) {
-                    const auto& doc_id = dlist[pos];
-                    bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
-                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
-                }
-                ++progress;
-            }
-        }
+        std::cout << "num large postings lists = " << num_large_lists
+                  << std::endl;
+        std::cout << "num small (filtered) postings lists = " << num_small_lists
+                  << std::endl;
     }
     {
         // all docs with 0 size go to the back!
@@ -141,6 +153,7 @@ bipartite_graph construct_bipartite_graph(
             ++itr;
         }
         bg.num_docs = bg.num_docs_inc_empty - num_empty;
+        std::cout << "num docs empty = " << num_empty << std::endl;
     }
     return bg;
 }
@@ -199,7 +212,8 @@ struct move_gains_t {
     std::vector<move_gain> V2;
 };
 
-move_gain compute_single_gain(docid_node* doc,std::vector<double>& before,std::vector<double>& after)
+move_gain compute_single_gain(
+    docid_node* doc, std::vector<double>& before, std::vector<double>& after)
 {
     double before_move = 0.0;
     double after_move = 0.0;
@@ -222,14 +236,14 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
     }
 }
 
-void compute_gains(docid_node* docs, size_t n,std::vector<double>& before,std::vector<double>& after,
-    std::vector<move_gain>& res)
+void compute_gains(docid_node* docs, size_t n, std::vector<double>& before,
+    std::vector<double>& after, std::vector<move_gain>& res)
 {
     cilk::reducer<cilk::op_list_append<move_gain> > gr;
     cilk_for(size_t i = 0; i < n; i++)
     {
         auto doc = docs + i;
-        gr->push_back(compute_single_gain(doc,before,after));
+        gr->push_back(compute_single_gain(doc, before, after));
     }
     const auto& gl = gr.get_value();
     res.reserve(gl.size());
@@ -253,19 +267,29 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
             cilk_spawn compute_deg(P.V2, P.n2, deg2);
             cilk_sync;
         }
-        cilk_for(size_t q = 0; q < num_queries; q++) {
-            if(deg1[q] or deg2[q])
-                before[q] = ((deg1[q] * log2(P.n1 / (deg1[q] + 1))) + (deg2[q] * log2(P.n2 / (deg2[q] + 1))));
-            if(deg1[q])
-                left2right[q] = (( (deg1[q]-1) * log2(P.n1/deg1[q])) + ((deg2[q]+1) * log2(P.n2 / (deg2[q] + 2))));
-            if(deg2[q])
-                right2left[q] = (( (deg1[q]+1) * log2(P.n1/(deg1[q] + 2))) + ((deg2[q]-1) * log2(P.n2 /deg2[q])));
+        double logn1 = log2(P.n1);
+        double logn2 = log2(P.n2);
+        cilk_for(size_t q = 0; q < num_queries; q++)
+        {
+            if (deg1[q] or deg2[q]) {
+                before[q] = deg1[q] * logn1 - deg1[q] * log2(deg1[q] + 1)
+                    + deg2[q] * logn2 - deg2[q] * log2(deg2[q] + 1);
+            }
+            if (deg1[q]) {
+                left2right[q] = (deg1[q] - 1) * logn1
+                    - (deg1[q] - 1) * log2(deg1[q]) + (deg2[q] + 1) * logn2
+                    - (deg2[q] + 1) * log2(deg2[q] + 2);
+            }
+            if (deg2[q])
+                right2left[q] = (deg1[q] + 1) * logn1
+                    - (deg1[q] + 1) * log2(deg1[q] + 2) + (deg2[q] - 1) * logn2
+                    - (deg2[q] - 1) * log2(deg2[q]);
         }
     }
 
     // (2) compute gains from moving docs
-    cilk_spawn compute_gains(P.V1, P.n1,before,left2right, gains.V1);
-    cilk_spawn compute_gains(P.V2, P.n2,before,right2left, gains.V2);
+    cilk_spawn compute_gains(P.V1, P.n1, before, left2right, gains.V1);
+    cilk_spawn compute_gains(P.V2, P.n2, before, right2left, gains.V2);
     cilk_sync;
 
     return gains;
