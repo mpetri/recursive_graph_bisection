@@ -260,6 +260,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     std::vector<double> left2right(num_queries);
     std::vector<double> right2left(num_queries);
     {
+        timer t("compute before after");
         std::vector<uint32_t> deg1(num_queries, 0);
         std::vector<uint32_t> deg2(num_queries, 0);
         {
@@ -288,6 +289,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     }
 
     // (2) compute gains from moving docs
+    timer t("compute gains");
     cilk_spawn compute_gains(P.V1, P.n1, before, left2right, gains.V1);
     cilk_spawn compute_gains(P.V2, P.n2, before, right2left, gains.V2);
     cilk_sync;
