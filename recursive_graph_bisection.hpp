@@ -12,6 +12,8 @@
 #include <cilk/cilk.h>
 #include <cilk/reducer_list.h>
 
+#include "avx_mathfun.h"
+
 namespace constants {
 const uint64_t MAX_DEPTH = 15;
 const int MAX_ITER = 20;
@@ -197,9 +199,9 @@ partition_t initial_partition(docid_node* G, size_t n)
 }
 
 struct move_gain {
-    double gain;
+    float gain;
     docid_node* node;
-    move_gain(double g, docid_node* n)
+    move_gain(float g, docid_node* n)
         : gain(g)
         , node(n)
     {
@@ -213,20 +215,20 @@ struct move_gains_t {
 };
 
 move_gain compute_single_gain(
-    docid_node* doc, std::vector<double>& before, std::vector<double>& after)
+    docid_node* doc, std::vector<float>& before, std::vector<float>& after)
 {
-    double before_move = 0.0;
-    double after_move = 0.0;
+    float before_move = 0.0;
+    float after_move = 0.0;
     for (size_t j = 0; j < doc->num_terms; j++) {
         auto q = doc->terms[j];
         before_move += before[q];
         after_move += after[q];
     }
-    double gain = before_move - after_move;
+    float gain = before_move - after_move;
     return move_gain(gain, doc);
 }
 
-void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
+void compute_deg(docid_node* docs, size_t n, std::vector<float>& deg)
 {
     for (size_t i = 0; i < n; i++) {
         auto doc = docs + i;
@@ -236,8 +238,8 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
     }
 }
 
-void compute_gains(docid_node* docs, size_t n, std::vector<double>& before,
-    std::vector<double>& after, std::vector<move_gain>& res)
+void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
+    std::vector<float>& after, std::vector<move_gain>& res)
 {
     cilk::reducer<cilk::op_list_append<move_gain> > gr;
     cilk_for(size_t i = 0; i < n; i++)
@@ -256,40 +258,45 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
     move_gains_t gains;
 
     // (1) compute current partition cost deg1/deg2
-    std::vector<double> before(num_queries);
-    std::vector<double> left2right(num_queries);
-    std::vector<double> right2left(num_queries);
+    std::vector<float> before(num_queries);
+    std::vector<float> left2right(num_queries);
+    std::vector<float> right2left(num_queries);
     {
         timer t("compute before after");
-        std::vector<uint32_t> deg1(num_queries, 0);
-        std::vector<uint32_t> deg2(num_queries, 0);
+        std::vector<float> deg1(num_queries, 0);
+        std::vector<float> deg2(num_queries, 0);
         {
             cilk_spawn compute_deg(P.V1, P.n1, deg1);
             cilk_spawn compute_deg(P.V2, P.n2, deg2);
             cilk_sync;
         }
-        double logn1 = log2(P.n1);
-        double logn2 = log2(P.n2);
+        float logn1 = log2f(P.n1);
+        float logn2 = log2f(P.n2);
         cilk_for(size_t q = 0; q < num_queries; q++)
         {
+            float fdata[8] = { deg1[q], deg1[q] + 1, deg1[q] + 2, deg2[q],
+                deg2[q] + 1, deg2[q] + 2, 2, 2 };
+
+            auto ipt = _mm256_load_ps(fdata);
+            auto out = log256_ps(ipt);
+            _mm256_store_ps(fdata, out);
+
             if (deg1[q] or deg2[q]) {
-                before[q] = deg1[q] * logn1 - deg1[q] * log2(deg1[q] + 1)
-                    + deg2[q] * logn2 - deg2[q] * log2(deg2[q] + 1);
+                before[q] = deg1[q] * logn1 - deg1[q] * fdata[1]
+                    + deg2[q] * logn2 - deg2[q] * fdata[4];
             }
             if (deg1[q]) {
-                left2right[q] = (deg1[q] - 1) * logn1
-                    - (deg1[q] - 1) * log2(deg1[q]) + (deg2[q] + 1) * logn2
-                    - (deg2[q] + 1) * log2(deg2[q] + 2);
+                left2right[q] = (deg1[q] - 1) * logn1 - (deg1[q] - 1) * fdata[0]
+                    + (deg2[q] + 1) * logn2 - (deg2[q] + 1) * fdata[4];
             }
             if (deg2[q])
-                right2left[q] = (deg1[q] + 1) * logn1
-                    - (deg1[q] + 1) * log2(deg1[q] + 2) + (deg2[q] - 1) * logn2
-                    - (deg2[q] - 1) * log2(deg2[q]);
+                right2left[q] = (deg1[q] + 1) * logn1 - (deg1[q] + 1) * fdata[2]
+                    + (deg2[q] - 1) * logn2 - (deg2[q] - 1) * fdata[3];
         }
     }
 
     // (2) compute gains from moving docs
-    timer t("compute gains");
+    timer t2("compute gains");
     cilk_spawn compute_gains(P.V1, P.n1, before, left2right, gains.V1);
     cilk_spawn compute_gains(P.V2, P.n2, before, right2left, gains.V2);
     cilk_sync;
