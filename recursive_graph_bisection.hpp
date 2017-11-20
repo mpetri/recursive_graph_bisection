@@ -201,6 +201,22 @@ partition_t initial_partition(docid_node* G, size_t n)
 struct move_gain {
     float gain;
     docid_node* node;
+    move_gain()
+        : gain(0.0)
+        , node(nullptr)
+    {
+    }
+    move_gain(move_gain&& mg)
+    {
+        gain = mg.gain;
+        node = mg.node;
+    }
+    move_gain& operator=(move_gain&& mg)
+    {
+        gain = mg.gain;
+        node = mg.node;
+        return *this;
+    }
     move_gain(float g, docid_node* n)
         : gain(g)
         , node(n)
@@ -241,15 +257,12 @@ void compute_deg(docid_node* docs, size_t n, std::vector<float>& deg)
 void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
     std::vector<float>& after, std::vector<move_gain>& res)
 {
-    cilk::reducer<cilk::op_list_append<move_gain> > gr;
+    res.resize(n);
     cilk_for(size_t i = 0; i < n; i++)
     {
         auto doc = docs + i;
-        gr->push_back(compute_single_gain(doc, before, after));
+        res[i] = compute_single_gain(doc, before, after);
     }
-    const auto& gl = gr.get_value();
-    res.reserve(gl.size());
-    res.insert(res.end(), gl.begin(), gl.end());
 }
 
 move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
