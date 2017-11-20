@@ -189,7 +189,7 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
         idx.doc_lengths.push_back(length_accumulator);
         ++progress;
     }
-    idx.num_docs = max_qid_id + 1;
+    idx.num_docs = bg.num_docs_inc_empty;
     idx.resize(max_qid_id + 1);
     return idx;
 }
