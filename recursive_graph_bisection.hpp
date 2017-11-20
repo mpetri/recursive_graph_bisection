@@ -150,6 +150,7 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
     timer t("recreate_invidx");
     inverted_index idx;
     uint32_t max_qid_id = 0;
+    progress_bar progress("recreate invidx", bg.num_docs_inc_empty);
     for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
         const auto& doc = bg.graph[docid];
         for (size_t i = 0; i < doc.num_terms_not_pruned; i++) {
@@ -162,6 +163,7 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
             idx.docids[qid].push_back(docid);
             idx.freqs[qid].push_back(freq);
         }
+        ++progress;
     }
     idx.num_docs = max_qid_id + 1;
     idx.resize(max_qid_id + 1);
@@ -197,19 +199,14 @@ struct move_gains_t {
     std::vector<move_gain> V2;
 };
 
-move_gain compute_single_gain(const std::vector<uint32_t>& deg1,
-    const std::vector<uint32_t>& deg2, docid_node* doc, double n1, double n2)
+move_gain compute_single_gain(docid_node* doc,std::vector<double>& before,std::vector<double>& after)
 {
     double before_move = 0.0;
     double after_move = 0.0;
     for (size_t j = 0; j < doc->num_terms; j++) {
         auto q = doc->terms[j];
-        double d1 = deg1[q];
-        double d2 = deg2[q];
-        before_move
-            += ((d1 * log2(n1 / (d1 + 1))) + (d2 * log2(n2 / (d2 + 1))));
-        after_move += (((d1 - 1) * log2(n1 / ((d1 - 1) + 1)))
-            + ((d2 + 1) * log2(n2 / ((d2 + 1) + 1))));
+        before_move += before[q];
+        after_move += after[q];
     }
     double gain = before_move - after_move;
     return move_gain(gain, doc);
@@ -225,15 +222,14 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
     }
 }
 
-void compute_gains(docid_node* docs, size_t n, size_t n1, size_t n2,
-    const std::vector<uint32_t>& deg1, const std::vector<uint32_t>& deg2,
+void compute_gains(docid_node* docs, size_t n,std::vector<double>& before,std::vector<double>& after,
     std::vector<move_gain>& res)
 {
     cilk::reducer<cilk::op_list_append<move_gain> > gr;
     cilk_for(size_t i = 0; i < n; i++)
     {
         auto doc = docs + i;
-        gr->push_back(compute_single_gain(deg1, deg2, doc, n1, n2));
+        gr->push_back(compute_single_gain(doc,before,after));
     }
     const auto& gl = gr.get_value();
     res.reserve(gl.size());
@@ -242,20 +238,34 @@ void compute_gains(docid_node* docs, size_t n, size_t n1, size_t n2,
 
 move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
 {
+    timer t("compute_move_gains");
     move_gains_t gains;
 
     // (1) compute current partition cost deg1/deg2
-    std::vector<uint32_t> deg1(num_queries, 0);
-    std::vector<uint32_t> deg2(num_queries, 0);
+    std::vector<double> before(num_queries);
+    std::vector<double> left2right(num_queries);
+    std::vector<double> right2left(num_queries);
     {
-        cilk_spawn compute_deg(P.V1, P.n1, deg1);
-        cilk_spawn compute_deg(P.V2, P.n2, deg2);
-        cilk_sync;
+        std::vector<uint32_t> deg1(num_queries, 0);
+        std::vector<uint32_t> deg2(num_queries, 0);
+        {
+            cilk_spawn compute_deg(P.V1, P.n1, deg1);
+            cilk_spawn compute_deg(P.V2, P.n2, deg2);
+            cilk_sync;
+        }
+        cilk_for(size_t q = 0; q < num_queries; q++) {
+            if(deg1[q] or deg2[q])
+                before[q] = ((deg1[q] * log2(P.n1 / (deg1[q] + 1))) + (deg2[q] * log2(P.n2 / (deg2[q] + 1))));
+            if(deg1[q])
+                left2right[q] = (( (deg1[q]-1) * log2(P.n1/deg1[q])) + ((deg2[q]+1) * log2(P.n2 / (deg2[q] + 2))));
+            if(deg2[q])
+                right2left[q] = (( (deg1[q]+1) * log2(P.n1/(deg1[q] + 2))) + ((deg2[q]-1) * log2(P.n2 /deg2[q])));
+        }
     }
 
     // (2) compute gains from moving docs
-    cilk_spawn compute_gains(P.V1, P.n1, P.n1, P.n2, deg1, deg2, gains.V1);
-    cilk_spawn compute_gains(P.V2, P.n2, P.n2, P.n1, deg2, deg1, gains.V2);
+    cilk_spawn compute_gains(P.V1, P.n1,before,left2right, gains.V1);
+    cilk_spawn compute_gains(P.V2, P.n2,before,right2left, gains.V2);
     cilk_sync;
 
     return gains;
@@ -272,14 +282,14 @@ void recursive_bisection(progress_bar& progress, docid_node* G, size_t nq,
         // (2a) compute move gains
         auto gains = compute_move_gains(partition, nq);
 
-        // (2a) sort by decreasing gain. O(n log n)
+        // (2b) sort by decreasing gain. O(n log n)
         {
             cilk_spawn std::sort(gains.V1.begin(), gains.V1.end());
             cilk_spawn std::sort(gains.V2.begin(), gains.V2.end());
             cilk_sync;
         }
 
-        // (2b) swap. O(n)
+        // (2c) swap. O(n)
         size_t num_swaps = 0;
         {
             auto itr_v1 = gains.V1.begin();
@@ -298,7 +308,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G, size_t nq,
             }
         }
 
-        // (2c) converged?
+        // (2d) converged?
         if (num_swaps == 0) {
             break;
         }
@@ -326,7 +336,6 @@ void recursive_bisection(progress_bar& progress, docid_node* G, size_t nq,
 inverted_index reorder_docids_graph_bisection(
     inverted_index& invidx, size_t min_list_len)
 {
-    std::cout << "construct_bipartite_graph" << std::endl;
     auto bg = construct_bipartite_graph(invidx, min_list_len);
 
     {
@@ -334,7 +343,5 @@ inverted_index reorder_docids_graph_bisection(
         progress_bar bp("recursive_bisection", bg.num_docs);
         recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs);
     }
-
-    std::cout << "recreate_invidx" << std::endl;
     return recreate_invidx(bg);
 }
