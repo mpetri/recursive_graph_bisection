@@ -287,7 +287,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries)
             }
             if (deg1[q]) {
                 left2right[q] = (deg1[q] - 1) * logn1 - (deg1[q] - 1) * fdata[0]
-                    + (deg2[q] + 1) * logn2 - (deg2[q] + 1) * fdata[4];
+                    + (deg2[q] + 1) * logn2 - (deg2[q] + 1) * fdata[5];
             }
             if (deg2[q])
                 right2left[q] = (deg1[q] + 1) * logn1 - (deg1[q] + 1) * fdata[2]
