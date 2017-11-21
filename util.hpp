@@ -16,6 +16,7 @@ struct inverted_index {
     uint32_t num_docs;
     std::vector<postings_list> docids;
     std::vector<postings_list> freqs;
+    std::vector<uint32_t> doc_lengths;
     size_t resize(size_t new_size)
     {
         docids.resize(new_size);
@@ -267,6 +268,7 @@ void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
 {
     std::string docs_file = ds2i_out_prefix + ".docs";
     std::string freqs_file = ds2i_out_prefix + ".freqs";
+    std::string lens_file = ds2i_out_prefix + ".sizes";
     {
         auto df = fopen_or_fail(docs_file, "wb");
         {
@@ -286,5 +288,10 @@ void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
             write_uint32_list(ff, idx.freqs[i]);
         }
         fclose_or_fail(ff);
+    }
+    {
+      auto sf = fopen_or_fail(lens_file, "wb");
+      write_uint32_list(sf, idx.doc_lengths);
+      fclose_or_fail(sf);
     }
 }
