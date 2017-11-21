@@ -12,6 +12,8 @@
 #include <cilk/cilk.h>
 #include <cilk/reducer_list.h>
 
+//#define DUMP_MAPPING_TO_STDERR
+
 namespace constants {
 const uint64_t MAX_DEPTH = 15;
 const int MAX_ITER = 20;
@@ -177,6 +179,7 @@ inverted_index recreate_invidx(const bipartite_graph& bg)
     timer t("recreate_invidx");
     inverted_index idx;
     uint32_t max_qid_id = 0;
+    progress_bar progress("recreate invidx", bg.num_docs_inc_empty);
     for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
         uint32_t length_accumulator = 0;
         const auto& doc = bg.graph[docid];
