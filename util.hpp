@@ -24,6 +24,13 @@ struct inverted_index {
     }
 
     size_t size() const { return docids.size(); }
+
+    void clear()
+    {
+        docids.resize(0);
+        freqs.resize(0);
+        doc_lengths.resize(0);
+    }
 };
 
 int tsfprintff(FILE* f, const char* format, ...)
@@ -290,8 +297,8 @@ void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
         fclose_or_fail(ff);
     }
     {
-      auto sf = fopen_or_fail(lens_file, "wb");
-      write_uint32_list(sf, idx.doc_lengths);
-      fclose_or_fail(sf);
+        auto sf = fopen_or_fail(lens_file, "wb");
+        write_uint32_list(sf, idx.doc_lengths);
+        fclose_or_fail(sf);
     }
 }
