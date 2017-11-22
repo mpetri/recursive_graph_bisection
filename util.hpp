@@ -17,6 +17,7 @@ struct inverted_index {
     std::vector<postings_list> docids;
     std::vector<postings_list> freqs;
     std::vector<uint32_t> doc_lengths;
+    std::vector<uint32_t> doc_id_mapping;
     size_t resize(size_t new_size)
     {
         docids.resize(new_size);
@@ -30,6 +31,7 @@ struct inverted_index {
         docids.resize(0);
         freqs.resize(0);
         doc_lengths.resize(0);
+        doc_id_mapping.resize(0);
     }
 };
 
@@ -276,6 +278,7 @@ void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
     std::string docs_file = ds2i_out_prefix + ".docs";
     std::string freqs_file = ds2i_out_prefix + ".freqs";
     std::string lens_file = ds2i_out_prefix + ".sizes";
+    std::string mapping_file = ds2i_out_prefix + ".mapping";
     {
         auto df = fopen_or_fail(docs_file, "wb");
         {
@@ -300,5 +303,12 @@ void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
         auto sf = fopen_or_fail(lens_file, "wb");
         write_uint32_list(sf, idx.doc_lengths);
         fclose_or_fail(sf);
+    }
+    {
+      auto mf = fopen_or_fail(mapping_file, "w");
+      for (size_t i = 0; i < idx.doc_id_mapping.size(); ++i) {
+        fprintff(mf, "%zu %zu\n", idx.doc_id_mapping[i], i);
+      }
+      fclose_or_fail(mf);
     }
 }
