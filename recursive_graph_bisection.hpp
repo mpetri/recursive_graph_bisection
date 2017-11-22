@@ -127,7 +127,7 @@ bipartite_graph construct_bipartite_graph(
         }
     }
     {
-        progress_bar progress("creating forward index", idx.size());
+        progress_bar progress("creating forward index", idx.size() * 2);
         std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
         for (size_t termid = 0; termid < idx.docids.size(); termid++) {
             const auto& dlist = idx.docids[termid];
@@ -139,8 +139,8 @@ bipartite_graph construct_bipartite_graph(
                     bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
                     bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
                 }
-                ++progress;
             }
+            ++progress;
         }
         for (size_t termid = 0; termid < idx.docids.size(); termid++) {
             const auto& dlist = idx.docids[termid];
@@ -152,8 +152,8 @@ bipartite_graph construct_bipartite_graph(
                     bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
                     bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
                 }
-                ++progress;
             }
+            ++progress;
         }
     }
     {
@@ -390,20 +390,20 @@ void recursive_bisection_np(progress_bar& progress, docid_node* G,
             compute_deg(partition.V2, partition.n2, deg2);
         }
 
-        // (2) perform bisection. constant number of iterations
+        // (3) perform bisection. constant number of iterations
         for (int cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
-            // (2a) compute move gains
+            // (3a) compute move gains
             auto gains = compute_move_gains_np(partition, num_queries, deg1,
                 deg2, before, left2right, right2left, query_changed);
             memset(query_changed.data(), 0, num_queries);
 
-            // (2a) sort by decreasing gain. O(n log n)
+            // (3b) sort by decreasing gain. O(n log n)
             {
                 std::sort(gains.V1.begin(), gains.V1.end());
                 std::sort(gains.V2.begin(), gains.V2.end());
             }
 
-            // (2b) swap. O(n)
+            // (3c) swap. O(n)
             size_t num_swaps = 0;
             {
                 auto itr_v1 = gains.V1.begin();
@@ -423,14 +423,14 @@ void recursive_bisection_np(progress_bar& progress, docid_node* G,
                 }
             }
 
-            // (2c) converged?
+            // (3d) converged?
             if (num_swaps == 0) {
                 break;
             }
         }
     }
 
-    // (3) recurse. at most O(log n) recursion steps
+    // (4) recurse. at most O(log n) recursion steps
     if (depth + 1 <= constants::MAX_DEPTH) {
         if (partition.n1 > 1)
             recursive_bisection_np(
@@ -469,21 +469,21 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
             cilk_sync;
         }
 
-        // (2) perform bisection. constant number of iterations
+        // (3) perform bisection. constant number of iterations
         for (int cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
-            // (2a) compute move gains
+            // (3a) compute move gains
             auto gains = compute_move_gains(partition, num_queries, deg1, deg2,
                 before, left2right, right2left, query_changed);
             memset(query_changed.data(), 0, num_queries);
 
-            // (2a) sort by decreasing gain. O(n log n)
+            // (3b) sort by decreasing gain. O(n log n)
             {
                 cilk_spawn std::sort(gains.V1.begin(), gains.V1.end());
                 cilk_spawn std::sort(gains.V2.begin(), gains.V2.end());
                 cilk_sync;
             }
 
-            // (2b) swap. O(n)
+            // (3c) swap. O(n)
             size_t num_swaps = 0;
             {
                 auto itr_v1 = gains.V1.begin();
@@ -503,14 +503,14 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
                 }
             }
 
-            // (2c) converged?
+            // (3d) converged?
             if (num_swaps == 0) {
                 break;
             }
         }
     }
 
-    // (3) recurse. at most O(log n) recursion steps
+    // (4) recurse. at most O(log n) recursion steps
     if (depth + 1 <= constants::MAX_DEPTH) {
         if (depth < constants::PARALLEL_SWITCH_DEPTH) {
             if (partition.n1 > 1) {
@@ -544,10 +544,12 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
 inverted_index reorder_docids_graph_bisection(
     inverted_index& invidx, size_t min_list_len)
 {
-
-    std::cout << "construct_bipartite_graph" << std::endl;
     auto bg = construct_bipartite_graph(invidx, min_list_len);
 
+    // free up some space
+    invidx.clear();
+
+    // make things faster by precomputing some logs
     log2_precomp.resize(bg.num_docs);
     cilk_for(size_t i = 0; i < bg.num_docs; i++) { log2_precomp[i] = log2f(i); }
 
@@ -556,7 +558,5 @@ inverted_index reorder_docids_graph_bisection(
         progress_bar bp("recursive_bisection", bg.num_docs);
         recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs);
     }
-
-    std::cout << "recreate_invidx" << std::endl;
     return recreate_invidx(bg);
 }
