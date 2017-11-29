@@ -161,6 +161,15 @@ bipartite_graph construct_bipartite_graph(
         size_t num_empty = 0;
         while (itr != ritr) {
             if (itr->num_terms == 0) {
+                // Find next non-empty doc from end
+                while(ritr->num_terms == 0 && ritr != itr) {
+                    num_empty++;
+                    --ritr;
+                }
+                // Ensure we did not meet itr
+                if (itr == ritr) {
+                    break;   
+                }
                 num_empty++;
                 swap_nodes(&*itr, &*ritr);
                 --ritr;
