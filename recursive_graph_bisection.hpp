@@ -5,6 +5,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 #include "util.hpp"
@@ -153,6 +154,12 @@ bipartite_graph construct_bipartite_graph(
             }
             ++progress;
         }
+    }
+    // Set ID for empty documents.
+    for (uint32_t doc_id = 0; doc_id < idx.num_docs; ++doc_id) {
+      if (bg.graph[doc_id].initial_id != doc_id) {
+        bg.graph[doc_id].initial_id = doc_id;
+      }
     }
     {
         // all docs with 0 size go to the back!
