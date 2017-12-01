@@ -5,7 +5,6 @@
 #include <random>
 #include <string>
 #include <unordered_map>
-#include <map>
 #include <vector>
 
 #include "util.hpp"
