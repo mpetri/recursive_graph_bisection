@@ -305,10 +305,10 @@ void write_ds2i_files(inverted_index& idx, std::string ds2i_out_prefix)
         fclose_or_fail(sf);
     }
     {
-      auto mf = fopen_or_fail(mapping_file, "w");
-      for (size_t i = 0; i < idx.doc_id_mapping.size(); ++i) {
-        fprintff(mf, "%zu %zu\n", idx.doc_id_mapping[i], i);
-      }
-      fclose_or_fail(mf);
+        auto mf = fopen_or_fail(mapping_file, "w");
+        for (size_t i = 0; i < idx.doc_id_mapping.size(); ++i) {
+            fprintff(mf, "%zu %zu\n", idx.doc_id_mapping[i], i);
+        }
+        fclose_or_fail(mf);
     }
 }

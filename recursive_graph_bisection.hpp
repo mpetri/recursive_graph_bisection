@@ -156,9 +156,9 @@ bipartite_graph construct_bipartite_graph(
     }
     // Set ID for empty documents.
     for (uint32_t doc_id = 0; doc_id < idx.num_docs; ++doc_id) {
-      if (bg.graph[doc_id].initial_id != doc_id) {
-        bg.graph[doc_id].initial_id = doc_id;
-      }
+        if (bg.graph[doc_id].initial_id != doc_id) {
+            bg.graph[doc_id].initial_id = doc_id;
+        }
     }
     {
         // all docs with 0 size go to the back!
@@ -168,13 +168,13 @@ bipartite_graph construct_bipartite_graph(
         while (itr != ritr) {
             if (itr->num_terms == 0) {
                 // Find next non-empty doc from end
-                while(ritr->num_terms == 0 && ritr != itr) {
+                while (ritr->num_terms == 0 && ritr != itr) {
                     num_empty++;
                     --ritr;
                 }
                 // Ensure we did not meet itr
                 if (itr == ritr) {
-                    break;   
+                    break;
                 }
                 num_empty++;
                 swap_nodes(&*itr, &*ritr);
