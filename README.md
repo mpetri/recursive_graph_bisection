@@ -93,7 +93,7 @@ rec_graph_bisect.x /storage/gov2-ds2i/gov2 /storage/gov2-ds2i/gov2-bisected 256 
 
 which uses `32` threads, a minimum list length of `32` and stores the result as:
 
-
+```
 [10:56:28 mpetri]$ ls -l /storage/gov2-d2si/
 total 43084248
 -rw-r--r-- 1 mpetri mpetri 21765004632 Jul 18 14:37 gov2.docs
