@@ -18,7 +18,7 @@ struct inverted_index {
     std::vector<postings_list> freqs;
     std::vector<uint32_t> doc_lengths;
     std::vector<uint32_t> doc_id_mapping;
-    size_t resize(size_t new_size)
+    void resize(size_t new_size)
     {
         docids.resize(new_size);
         freqs.resize(new_size);
