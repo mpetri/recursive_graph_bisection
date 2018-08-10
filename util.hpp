@@ -250,7 +250,7 @@ inverted_index read_ds2i_files(std::string ds2i_prefix)
             num_postings += n;
             idx.docids.emplace_back(std::move(list));
         }
-        num_docs = max_doc_id - 1;
+        num_docs = max_doc_id + 1;
     }
     fclose_or_fail(df);
     std::string freqs_file = ds2i_prefix + ".freqs";
