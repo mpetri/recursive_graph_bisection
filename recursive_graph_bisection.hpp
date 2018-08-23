@@ -125,25 +125,12 @@ bipartite_graph construct_bipartite_graph(
         }
     }
     {
-        progress_bar progress("creating forward index", idx.size() * 2);
+        progress_bar progress("creating forward index", idx.size());
         std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
         for (size_t termid = 0; termid < idx.docids.size(); termid++) {
             const auto& dlist = idx.docids[termid];
             const auto& flist = idx.freqs[termid];
             if (dlist.size() >= min_list_len) {
-                for (size_t pos = 0; pos < dlist.size(); pos++) {
-                    const auto& doc_id = dlist[pos];
-                    bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
-                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
-                }
-            }
-            ++progress;
-        }
-        for (size_t termid = 0; termid < idx.docids.size(); termid++) {
-            const auto& dlist = idx.docids[termid];
-            const auto& flist = idx.freqs[termid];
-            if (dlist.size() < min_list_len) {
                 for (size_t pos = 0; pos < dlist.size(); pos++) {
                     const auto& doc_id = dlist[pos];
                     bg.graph[doc_id].initial_id = doc_id;
