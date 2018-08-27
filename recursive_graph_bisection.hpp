@@ -321,7 +321,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
 
     // (2) compute gains from moving docs
     cilk_spawn compute_gains(P.V1, P.n1, before, left2right, gains.V1);
-    cilk_spawn compute_gains(P.V2, P.n2, before, right2left, gains.V2);
+    compute_gains(P.V2, P.n2, before, right2left, gains.V2);
     cilk_sync;
 
     return gains;
@@ -463,7 +463,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
         std::vector<uint8_t> query_changed(num_queries, 1);
         {
             cilk_spawn compute_deg(partition.V1, partition.n1, deg1);
-            cilk_spawn compute_deg(partition.V2, partition.n2, deg2);
+            compute_deg(partition.V2, partition.n2, deg2);
             cilk_sync;
         }
 
@@ -477,7 +477,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
             // (3b) sort by decreasing gain. O(n log n)
             {
                 cilk_spawn std::sort(gains.V1.begin(), gains.V1.end());
-                cilk_spawn std::sort(gains.V2.begin(), gains.V2.end());
+                std::sort(gains.V2.begin(), gains.V2.end());
                 cilk_sync;
             }
 
@@ -516,7 +516,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
                     num_queries, partition.n1, depth + 1);
             }
             if (partition.n2 > 1) {
-                cilk_spawn recursive_bisection(progress, partition.V2,
+                recursive_bisection(progress, partition.V2,
                     num_queries, partition.n2, depth + 1);
             }
             cilk_sync;
