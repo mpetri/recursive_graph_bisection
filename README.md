@@ -88,7 +88,7 @@ so the `ds2i_prefix` would be `/storage/gov2-ds2i/gov2`
 and we execute the bisection command with the parameters
 
 ```
-rec_graph_bisect.x /storage/gov2-ds2i/gov2 /storage/gov2-ds2i/gov2-bisected 256 32`
+rec_graph_bisect.x /storage/gov2-ds2i/gov2 /storage/gov2-ds2i/gov2-bisected 256 32
 ```
 
 which uses `32` threads, a minimum list length of `256` and stores the result as:

@@ -13,7 +13,9 @@ using namespace std::chrono;
 using postings_list = std::vector<uint32_t>;
 
 struct inverted_index {
+    size_t num_postings;
     uint32_t num_docs;
+    uint32_t max_doc_id;
     std::vector<postings_list> docids;
     std::vector<postings_list> freqs;
     std::vector<uint32_t> doc_lengths;
@@ -59,7 +61,7 @@ struct timer {
     ~timer()
     {
         auto stop = high_resolution_clock::now();
-        tsfprintff(stdout, "STOP(%s) - %f sec\n", name.c_str(),
+        tsfprintff(stdout, "STOP(%s) - %.3f sec\n", name.c_str(),
             duration_cast<milliseconds>(stop - start).count() / 1000.0f);
     }
 };
@@ -267,9 +269,12 @@ inverted_index read_ds2i_files(std::string ds2i_prefix)
     }
     fclose_or_fail(ff);
     idx.num_docs = num_docs;
-    std::cout << "num_docs = " << num_docs << std::endl;
-    std::cout << "num_lists = " << num_lists << std::endl;
-    std::cout << "num_postings = " << num_postings << std::endl;
+    idx.max_doc_id = max_doc_id;
+    idx.num_postings = num_postings;
+    std::cout << "\tnum_docs = " << num_docs << std::endl;
+    std::cout << "\tmax_doc_id = " << max_doc_id << std::endl;
+    std::cout << "\tnum_lists = " << num_lists << std::endl;
+    std::cout << "\tnum_postings = " << num_postings << std::endl;
     return idx;
 }
 

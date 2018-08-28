@@ -9,8 +9,11 @@
 
 #include "util.hpp"
 
+#include <cilk/cilk_api.h>
 #include <cilk/cilk.h>
-#include <cilk/reducer_list.h>
+#include <cilk/reducer_max.h>
+#include <cilk/reducer_opadd.h>
+
 
 namespace constants {
 const uint64_t MAX_DEPTH = 15;
@@ -28,6 +31,21 @@ struct docid_node {
 
 std::vector<float> log2_precomp;
 
+float log2_cmp(uint32_t idx) {
+    if(idx < 256) return log2_precomp[idx];
+    return log2f(idx);
+}
+
+
+void swap_nodes(docid_node* a, docid_node* b)
+{
+    std::swap(a->initial_id, b->initial_id);
+    std::swap(a->terms, b->terms);
+    std::swap(a->freqs, b->freqs);
+    std::swap(a->num_terms, b->num_terms);
+    std::swap(a->num_terms_not_pruned, b->num_terms_not_pruned);
+}
+
 void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
     std::vector<uint32_t>& deg2, std::vector<uint8_t>& queries_changed)
 {
@@ -44,22 +62,9 @@ void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
         deg2[qry]--;
         queries_changed[qry] = 1;
     }
-
-    std::swap(a->initial_id, b->initial_id);
-    std::swap(a->terms, b->terms);
-    std::swap(a->freqs, b->freqs);
-    std::swap(a->num_terms, b->num_terms);
-    std::swap(a->num_terms_not_pruned, b->num_terms_not_pruned);
+    swap_nodes(a,b);
 }
 
-void swap_nodes(docid_node* a, docid_node* b)
-{
-    std::swap(a->initial_id, b->initial_id);
-    std::swap(a->terms, b->terms);
-    std::swap(a->freqs, b->freqs);
-    std::swap(a->num_terms, b->num_terms);
-    std::swap(a->num_terms_not_pruned, b->num_terms_not_pruned);
-}
 
 struct bipartite_graph {
     size_t num_queries;
@@ -77,40 +82,98 @@ struct partition_t {
     size_t n2;
 };
 
+void
+compute_doc_sizes(inverted_index& idx,std::vector<uint32_t>& doc_sizes,std::vector<uint32_t>& doc_sizes_non_pruned,
+    uint32_t min_doc_id,uint32_t max_doc_id, size_t min_list_len)
+{
+    for (size_t termid = 0; termid < idx.docids.size(); termid++) {
+        const auto& plist = idx.docids[termid];
+        for (const auto& doc_id : plist) {
+            if(min_doc_id <= doc_id && doc_id < max_doc_id) {
+                if (plist.size() >= min_list_len) {
+                    doc_sizes[doc_id] += 1;
+                }
+                doc_sizes_non_pruned[doc_id] += 1;
+            }
+        }
+    }
+}
+
+void
+create_graph(bipartite_graph& bg,inverted_index& idx,uint32_t min_doc_id,uint32_t max_doc_id, size_t min_list_len)
+{
+    std::vector<uint32_t> doc_offset(idx.max_doc_id + 1, 0);
+    for (size_t termid = 0; termid < idx.docids.size(); termid++) {
+        const auto& dlist = idx.docids[termid];
+        const auto& flist = idx.freqs[termid];
+        if (dlist.size() >= min_list_len) {
+            for (size_t pos = 0; pos < dlist.size(); pos++) {
+                const auto& doc_id = dlist[pos];
+                if(min_doc_id <= doc_id && doc_id < max_doc_id) {
+                    bg.graph[doc_id].initial_id = doc_id;
+                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
+                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+                }
+            }
+        }
+    }
+    for (size_t termid = 0; termid < idx.docids.size(); termid++) {
+        const auto& dlist = idx.docids[termid];
+        const auto& flist = idx.freqs[termid];
+        if (dlist.size() < min_list_len) {
+            for (size_t pos = 0; pos < dlist.size(); pos++) {
+                const auto& doc_id = dlist[pos];
+                if(min_doc_id <= doc_id && doc_id < max_doc_id) {
+                    bg.graph[doc_id].initial_id = doc_id;
+                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
+                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+                }
+            }
+        }
+    }
+}
+
 bipartite_graph construct_bipartite_graph(
     inverted_index& idx, size_t min_list_len)
 {
     timer t("construct_bipartite_graph");
     bipartite_graph bg;
     bg.num_queries = idx.size();
-    uint32_t max_doc_id = 0;
     {
-        size_t doc_size_sum = 0;
-        std::vector<uint32_t> doc_sizes;
-        std::vector<uint32_t> doc_sizes_non_pruned;
-        progress_bar progress("determine doc sizes", idx.size());
-        for (size_t termid = 0; termid < idx.docids.size(); termid++) {
-            const auto& plist = idx.docids[termid];
-            for (const auto& doc_id : plist) {
-                max_doc_id = std::max(max_doc_id, doc_id);
-                if (doc_sizes.size() <= max_doc_id) {
-                    doc_sizes.resize(1 + max_doc_id * 2);
-                    doc_sizes_non_pruned.resize(1 + max_doc_id * 2);
-                }
-                if (plist.size() >= min_list_len) {
-                    doc_sizes[doc_id]++;
-                }
-                doc_sizes_non_pruned[doc_id]++;
-                doc_size_sum++;
+        timer t("determine doc sizes");
+        size_t workers = __cilkrts_get_nworkers();
+        std::vector<uint32_t> doc_sizes(idx.max_doc_id+1);
+        std::vector<uint32_t> doc_sizes_non_pruned(idx.max_doc_id+1);
+        std::vector<std::vector<uint32_t>> tmp_doc_sizes(workers);
+        std::vector<std::vector<uint32_t>> tmp_doc_sizes_non_pruned(workers);
+        for(auto& v : tmp_doc_sizes) v.resize(idx.max_doc_id+1);
+        for(auto& v : tmp_doc_sizes_non_pruned) v.resize(idx.max_doc_id+1);
+        size_t doc_ids_in_slice = idx.max_doc_id / workers;
+        for (size_t id = 0; id < workers; id++) {
+            size_t min_doc_id = id * doc_ids_in_slice;
+            size_t max_doc_id = min_doc_id + doc_ids_in_slice;
+            if(id+1 == workers) {
+                max_doc_id = idx.max_doc_id+1;
+                compute_doc_sizes(idx,tmp_doc_sizes[id],tmp_doc_sizes_non_pruned[id],min_doc_id,max_doc_id,min_list_len);
+            } else {
+                cilk_spawn compute_doc_sizes(idx,tmp_doc_sizes[id],tmp_doc_sizes_non_pruned[id],min_doc_id,max_doc_id,min_list_len);
             }
-            ++progress;
         }
-        bg.doc_contents.resize(doc_size_sum);
-        bg.doc_freqs.resize(doc_size_sum);
-        doc_sizes.resize(max_doc_id + 1);
-        doc_sizes_non_pruned.resize(max_doc_id + 1);
-        bg.graph.resize(max_doc_id + 1);
-        bg.num_docs_inc_empty = max_doc_id + 1;
+        cilk_sync;
+        for(auto& v : tmp_doc_sizes) {
+            for(size_t i=0;i<v.size();i++) {
+                if(v[i]!=0) doc_sizes[i] = v[i];
+            }
+        }
+        for(auto& v : tmp_doc_sizes_non_pruned) {
+            for(size_t i=0;i<v.size();i++) {
+                if(v[i]!=0) doc_sizes_non_pruned[i] = v[i];
+            }
+        }
+        bg.doc_contents.resize(idx.num_postings);
+        bg.doc_freqs.resize(idx.num_postings);
+        bg.graph.resize(idx.max_doc_id + 1);
+        bg.num_docs_inc_empty = idx.max_doc_id + 1;
         bg.graph[0].terms = bg.doc_contents.data();
         bg.graph[0].freqs = bg.doc_freqs.data();
         bg.graph[0].num_terms = doc_sizes[0];
@@ -125,81 +188,129 @@ bipartite_graph construct_bipartite_graph(
         }
     }
     {
-        progress_bar progress("creating forward index", idx.size());
-        std::vector<uint32_t> doc_offset(max_doc_id + 1, 0);
-        for (size_t termid = 0; termid < idx.docids.size(); termid++) {
-            const auto& dlist = idx.docids[termid];
-            const auto& flist = idx.freqs[termid];
-            if (dlist.size() >= min_list_len) {
-                for (size_t pos = 0; pos < dlist.size(); pos++) {
-                    const auto& doc_id = dlist[pos];
-                    bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
-                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
-                }
+        timer t("create forward index");
+        size_t workers = __cilkrts_get_nworkers();
+        size_t doc_ids_in_slice = idx.max_doc_id / workers;
+        for (size_t id = 0; id < workers; id++) {
+            size_t min_doc_id = id * doc_ids_in_slice;
+            size_t max_doc_id = min_doc_id + doc_ids_in_slice;
+            if(id+1 == workers) {
+                max_doc_id = idx.max_doc_id+1;
+                create_graph(bg,idx,min_doc_id,max_doc_id,min_list_len);
+            } else {
+                cilk_spawn create_graph(bg,idx,min_doc_id,max_doc_id,min_list_len);
             }
-            ++progress;
         }
+        cilk_sync;
     }
+
     // Set ID for empty documents.
     for (uint32_t doc_id = 0; doc_id < idx.num_docs; ++doc_id) {
         if (bg.graph[doc_id].initial_id != doc_id) {
             bg.graph[doc_id].initial_id = doc_id;
         }
     }
+    size_t num_empty = 0;
     {
         // all docs with 0 size go to the back!
+        auto empty_cmp = [](const auto& a,const auto& b) {
+            return a.num_terms > b.num_terms;
+        };
+        std::sort(bg.graph.begin(),bg.graph.end(),empty_cmp);
         auto ritr = bg.graph.end() - 1;
         auto itr = bg.graph.begin();
-        size_t num_empty = 0;
         while (itr != ritr) {
             if (itr->num_terms == 0) {
-                // Find next non-empty doc from end
-                while (ritr->num_terms == 0 && ritr != itr) {
-                    num_empty++;
-                    --ritr;
-                }
-                // Ensure we did not meet itr
-                if (itr == ritr) {
-                    break;
-                }
                 num_empty++;
-                swap_nodes(&*itr, &*ritr);
-                --ritr;
+            } else {
+                break;
             }
-            ++itr;
+            --ritr;
         }
         bg.num_docs = bg.num_docs_inc_empty - num_empty;
     }
+
+    size_t num_skipped_lists = 0;
+    size_t num_lists = 0;
+    for (size_t termid = 0; termid < idx.docids.size(); termid++) {
+        const auto& dlist = idx.docids[termid];
+        if (dlist.size() < min_list_len) {
+            num_skipped_lists++;
+        } else {
+            num_lists++;
+        }
+    }
+    std::cout << "\tnum_empty docs = " << num_empty << std::endl;
+    std::cout << "\tnum_skipped lists = " << num_skipped_lists << std::endl;
+    std::cout << "\tnum_lists = " << num_lists << std::endl;
+    std::cout << "\tnum_docs = " << bg.num_docs << std::endl;
     return bg;
 }
 
-inverted_index recreate_invidx(const bipartite_graph& bg)
+void recreate_lists(const bipartite_graph& bg,inverted_index& idx,uint32_t min_q_id,uint32_t max_q_id,std::vector<uint32_t>& qmap,std::vector<uint32_t>& dsizes)
+{
+    for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
+        const auto& doc = bg.graph[docid];
+        for (size_t i = 0; i < doc.num_terms_not_pruned; i++) {
+            auto qid = doc.terms[i];
+            if(min_q_id <= qmap[qid] && qmap[qid] < max_q_id) {
+                auto freq = doc.freqs[i];
+                idx.docids[qid].push_back(docid);
+                idx.freqs[qid].push_back(freq);
+                dsizes[docid] += freq;
+            }
+        }
+    }
+}
+
+inverted_index recreate_invidx(const bipartite_graph& bg,size_t num_lists)
 {
     timer t("recreate_invidx");
     inverted_index idx;
-    uint32_t max_qid_id = 0;
-    progress_bar progress("recreate invidx", bg.num_docs_inc_empty);
-    for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
-        uint32_t length_accumulator = 0;
-        const auto& doc = bg.graph[docid];
-        idx.doc_id_mapping.push_back(doc.initial_id);
-        for (size_t i = 0; i < doc.num_terms_not_pruned; i++) {
-            auto qid = doc.terms[i];
-            auto freq = doc.freqs[i];
-            max_qid_id = std::max(max_qid_id, qid);
-            if (idx.size() <= qid) {
-                idx.resize(1 + qid * 2);
+    size_t num_postings = 0;
+    idx.resize(num_lists);
+    {
+        size_t workers = __cilkrts_get_nworkers();
+        size_t qids_in_slice = num_lists / workers;
+        std::vector<uint32_t> qids_map(num_lists);
+        for(size_t i=0;i<qids_map.size();i++) qids_map[i] = i;
+        std::mt19937 rnd(1);
+        std::shuffle(qids_map.begin(),qids_map.end(), rnd);
+        std::vector<std::vector<uint32_t>> doc_sizes(workers);
+        for (size_t id = 0; id < workers; id++) {
+            doc_sizes[id].resize(bg.num_docs_inc_empty);
+            size_t min_q_id = id * qids_in_slice;
+            size_t max_q_id = min_q_id + qids_in_slice;
+            if(id+1 == workers) {
+                max_q_id = num_lists;
+                recreate_lists(bg,idx,min_q_id,max_q_id,qids_map,doc_sizes[id]);
+            } else {
+                cilk_spawn recreate_lists(bg,idx,min_q_id,max_q_id,qids_map,doc_sizes[id]);
             }
-            idx.docids[qid].push_back(docid);
-            idx.freqs[qid].push_back(freq);
-            length_accumulator += freq;
         }
-        idx.doc_lengths.push_back(length_accumulator);
-        ++progress;
+        cilk_sync;
+        idx.doc_lengths.resize(bg.num_docs_inc_empty);
+        for (size_t id = 0; id < workers; id++) {
+            for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
+                idx.doc_lengths[docid] += doc_sizes[id][docid];
+            }
+        }
+    }
+    {
+
+        for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
+            const auto& doc = bg.graph[docid];
+            idx.doc_id_mapping.push_back(doc.initial_id);
+            num_postings += doc.num_terms_not_pruned;
+        }
     }
     idx.num_docs = bg.num_docs_inc_empty;
-    idx.resize(max_qid_id + 1);
+    idx.max_doc_id = idx.num_docs - 1;
+    idx.num_postings = num_postings;
+    std::cout << "\tnum_docs = " << idx.num_docs << std::endl;
+    std::cout << "\tmax_doc_id = " << idx.max_doc_id << std::endl;
+    std::cout << "\tnum_lists = " << idx.docids.size() << std::endl;
+    std::cout << "\tnum_postings = " << idx.num_postings << std::endl;
     return idx;
 }
 
@@ -264,7 +375,6 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
 void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
     std::vector<float>& after, std::vector<move_gain>& res)
 {
-    cilk::reducer<cilk::op_list_append<move_gain> > gr;
     res.resize(n);
     cilk_for(size_t i = 0; i < n; i++)
     {
@@ -276,7 +386,6 @@ void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
 void compute_gains_np(docid_node* docs, size_t n, std::vector<float>& before,
     std::vector<float>& after, std::vector<move_gain>& res)
 {
-    cilk::reducer<cilk::op_list_append<move_gain> > gr;
     res.resize(n);
     for (size_t i = 0; i < n; i++) {
         auto doc = docs + i;
@@ -302,26 +411,26 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
             right2left[q] = 0;
             if (deg1[q] or deg2[q]) {
                 before[q] = deg1[q] * logn1
-                    - deg1[q] * log2_precomp[deg1[q] + 1] + deg2[q] * logn2
-                    - deg2[q] * log2_precomp[deg2[q] + 1];
+                    - deg1[q] * log2_cmp(deg1[q] + 1) + deg2[q] * logn2
+                    - deg2[q] * log2_cmp(deg2[q] + 1);
             }
             if (deg1[q]) {
                 left2right[q] = (deg1[q] - 1) * logn1
-                    - (deg1[q] - 1) * log2_precomp[deg1[q]]
+                    - (deg1[q] - 1) * log2_cmp(deg1[q])
                     + (deg2[q] + 1) * logn2
-                    - (deg2[q] + 1) * log2_precomp[deg2[q] + 2];
+                    - (deg2[q] + 1) * log2_cmp(deg2[q] + 2);
             }
             if (deg2[q])
                 right2left[q] = (deg1[q] + 1) * logn1
-                    - (deg1[q] + 1) * log2_precomp[deg1[q] + 2]
+                    - (deg1[q] + 1) * log2_cmp(deg1[q] + 2)
                     + (deg2[q] - 1) * logn2
-                    - (deg2[q] - 1) * log2_precomp[deg2[q]];
+                    - (deg2[q] - 1) * log2_cmp(deg2[q]);
         }
     }
 
     // (2) compute gains from moving docs
     cilk_spawn compute_gains(P.V1, P.n1, before, left2right, gains.V1);
-    cilk_spawn compute_gains(P.V2, P.n2, before, right2left, gains.V2);
+    compute_gains(P.V2, P.n2, before, right2left, gains.V2);
     cilk_sync;
 
     return gains;
@@ -344,20 +453,20 @@ move_gains_t compute_move_gains_np(partition_t& P, size_t num_queries,
             right2left[q] = 0;
             if (deg1[q] or deg2[q]) {
                 before[q] = deg1[q] * logn1
-                    - deg1[q] * log2_precomp[deg1[q] + 1] + deg2[q] * logn2
-                    - deg2[q] * log2_precomp[deg2[q] + 1];
+                    - deg1[q] * log2_cmp(deg1[q] + 1) + deg2[q] * logn2
+                    - deg2[q] * log2_cmp(deg2[q] + 1);
             }
             if (deg1[q]) {
                 left2right[q] = (deg1[q] - 1) * logn1
-                    - (deg1[q] - 1) * log2_precomp[deg1[q]]
+                    - (deg1[q] - 1) * log2_cmp(deg1[q])
                     + (deg2[q] + 1) * logn2
-                    - (deg2[q] + 1) * log2_precomp[deg2[q] + 2];
+                    - (deg2[q] + 1) * log2_cmp(deg2[q] + 2);
             }
             if (deg2[q])
                 right2left[q] = (deg1[q] + 1) * logn1
-                    - (deg1[q] + 1) * log2_precomp[deg1[q] + 2]
+                    - (deg1[q] + 1) * log2_cmp(deg1[q] + 2)
                     + (deg2[q] - 1) * logn2
-                    - (deg2[q] - 1) * log2_precomp[deg2[q]];
+                    - (deg2[q] - 1) * log2_cmp(deg2[q]);
         }
     }
 
@@ -463,7 +572,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
         std::vector<uint8_t> query_changed(num_queries, 1);
         {
             cilk_spawn compute_deg(partition.V1, partition.n1, deg1);
-            cilk_spawn compute_deg(partition.V2, partition.n2, deg2);
+            compute_deg(partition.V2, partition.n2, deg2);
             cilk_sync;
         }
 
@@ -477,7 +586,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
             // (3b) sort by decreasing gain. O(n log n)
             {
                 cilk_spawn std::sort(gains.V1.begin(), gains.V1.end());
-                cilk_spawn std::sort(gains.V2.begin(), gains.V2.end());
+                std::sort(gains.V2.begin(), gains.V2.end());
                 cilk_sync;
             }
 
@@ -516,7 +625,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
                     num_queries, partition.n1, depth + 1);
             }
             if (partition.n2 > 1) {
-                cilk_spawn recursive_bisection(progress, partition.V2,
+                recursive_bisection(progress, partition.V2,
                     num_queries, partition.n2, depth + 1);
             }
             cilk_sync;
@@ -542,19 +651,20 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
 inverted_index reorder_docids_graph_bisection(
     inverted_index& invidx, size_t min_list_len)
 {
+    auto num_lists = invidx.docids.size();
     auto bg = construct_bipartite_graph(invidx, min_list_len);
 
     // free up some space
     invidx.clear();
 
     // make things faster by precomputing some logs
-    log2_precomp.resize(bg.num_docs);
-    cilk_for(size_t i = 0; i < bg.num_docs; i++) { log2_precomp[i] = log2f(i); }
+    log2_precomp.resize(256);
+    cilk_for(size_t i = 0; i < 256; i++) { log2_precomp[i] = log2f(i); }
 
     {
         timer t("recursive_bisection");
         progress_bar bp("recursive_bisection", bg.num_docs);
         recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs);
     }
-    return recreate_invidx(bg);
+    return recreate_invidx(bg,num_lists);
 }
