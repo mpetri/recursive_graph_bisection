@@ -15,7 +15,6 @@
 #include <cilk/reducer_opadd.h>
 
 namespace constants {
-const uint64_t MAX_DEPTH = 15;
 const int MAX_ITER = 20;
 const uint64_t PARALLEL_SWITCH_DEPTH = 6;
 }
@@ -485,7 +484,7 @@ move_gains_t compute_move_gains_np(partition_t& P, size_t num_queries,
 }
 
 void recursive_bisection_np(progress_bar& progress, docid_node* G,
-    size_t num_queries, size_t n, uint64_t depth = 0)
+    size_t num_queries, size_t n,uint64_t depth,uint64_t max_depth)
 {
     // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
@@ -545,13 +544,13 @@ void recursive_bisection_np(progress_bar& progress, docid_node* G,
     }
 
     // (4) recurse. at most O(log n) recursion steps
-    if (depth + 1 <= constants::MAX_DEPTH) {
+    if (depth + 1 <= max_depth) {
         if (partition.n1 > 1)
             recursive_bisection_np(
-                progress, partition.V1, num_queries, partition.n1, depth + 1);
+                progress, partition.V1, num_queries, partition.n1, depth + 1,max_depth);
         if (partition.n2 > 1)
             recursive_bisection_np(
-                progress, partition.V2, num_queries, partition.n2, depth + 1);
+                progress, partition.V2, num_queries, partition.n2, depth + 1,max_depth);
 
         if (partition.n1 == 1)
             progress.done(1);
@@ -563,7 +562,7 @@ void recursive_bisection_np(progress_bar& progress, docid_node* G,
 }
 
 void recursive_bisection(progress_bar& progress, docid_node* G,
-    size_t num_queries, size_t n, uint64_t depth = 0)
+    size_t num_queries, size_t n, uint64_t depth,uint64_t max_depth)
 {
     // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
@@ -625,25 +624,25 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
     }
 
     // (4) recurse. at most O(log n) recursion steps
-    if (depth + 1 <= constants::MAX_DEPTH) {
+    if (depth + 1 <= max_depth) {
         if (depth < constants::PARALLEL_SWITCH_DEPTH) {
             if (partition.n1 > 1) {
                 cilk_spawn recursive_bisection(progress, partition.V1,
-                    num_queries, partition.n1, depth + 1);
+                    num_queries, partition.n1, depth + 1,max_depth);
             }
             if (partition.n2 > 1) {
                 recursive_bisection(progress, partition.V2, num_queries,
-                    partition.n2, depth + 1);
+                    partition.n2, depth + 1,max_depth);
             }
             cilk_sync;
         } else {
             if (partition.n1 > 1) {
                 recursive_bisection_np(progress, partition.V1, num_queries,
-                    partition.n1, depth + 1);
+                    partition.n1, depth + 1,max_depth);
             }
             if (partition.n2 > 1) {
                 recursive_bisection_np(progress, partition.V2, num_queries,
-                    partition.n2, depth + 1);
+                    partition.n2, depth + 1,max_depth);
             }
         }
         if (partition.n1 == 1)
@@ -666,12 +665,14 @@ inverted_index reorder_docids_graph_bisection(
 
     // make things faster by precomputing some logs
     log2_precomp.resize(256);
-    cilk_for(size_t i = 0; i < 256; i++) { log2_precomp[i] = log2f(i); }
+    for(size_t i = 0; i < 256; i++) { log2_precomp[i] = log2f(i); }
 
     {
+        auto max_depth = std::max(1.0,ceil(log2(bg.num_docs)-5));
+        std::cout << "recursion depth = " << max_depth << std::endl;
         timer t("recursive_bisection");
         progress_bar bp("recursive_bisection", bg.num_docs);
-        recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs);
+        recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs, 0, max_depth);
     }
     return recreate_invidx(bg, num_lists);
 }
