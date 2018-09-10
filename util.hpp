@@ -84,6 +84,8 @@ struct progress_bar {
     }
     progress_bar& operator++()
     {
+        static std::mutex pmutex;
+        std::lock_guard<std::mutex> lock(pmutex);
         current++;
         float fcp = float(current) / float(total) * 100;
         size_t cp = fcp;
