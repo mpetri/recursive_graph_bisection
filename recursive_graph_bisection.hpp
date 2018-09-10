@@ -374,6 +374,46 @@ move_gain compute_single_gain(
     return move_gain(gain, doc);
 }
 
+static size_t generation = 1;
+
+template<class T>
+class cache_entry {
+   public:
+    const T &value() { return m_value; }
+    bool     has_value() { return m_generation == generation; }
+    void     operator=(const T &v) {
+        m_value     = v;
+        m_generation = generation;
+    }
+
+   private:
+    T m_value;
+    size_t m_generation = 0;
+};
+
+using cache = std::vector<cache_entry<double>>;
+
+move_gain compute_single_gain(
+    docid_node* doc, cache& gain_cache, std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2, float logn1, float logn2)
+{
+
+    float gain = 0.0;
+    for (size_t j = 0; j < doc->num_terms; j++) {
+        auto q = doc->terms[j];
+        if (not gain_cache[q].has_value()) {
+            auto term_gain = deg1[q] * logn1 - deg1[q] * log2_cmp(deg1[q] + 1)
+                        + deg2[q] * logn2 - deg2[q] * log2_cmp(deg2[q] + 1);
+            term_gain -= (deg1[q] - 1) * logn1
+                        - (deg1[q] - 1) * log2_cmp(deg1[q]) + (deg2[q] + 1) * logn2
+                        - (deg2[q] + 1) * log2_cmp(deg2[q] + 2);
+            gain_cache[q] = term_gain;
+        }
+        gain += gain_cache[q].value();
+    }
+    return move_gain(gain, doc);
+}
+
+
 void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
 {
     for (size_t i = 0; i < n; i++) {
@@ -458,6 +498,29 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
     return gains;
 }
 
+move_gains_t compute_move_gains_cached(partition_t& P,
+    std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2)
+{
+    move_gains_t gains;
+    static cache gain_cache(deg1.size());
+
+    float logn1 = log2f(P.n1);
+    float logn2 = log2f(P.n2);
+    gains.V1.resize(P.n1);
+    for(size_t i = 0; i < P.n1; i++) {
+        auto doc = P.V1 + i;
+        gains.V1[i] = compute_single_gain(doc, gain_cache, deg1, deg2, logn1, logn2);
+    }
+    generation++;
+    gains.V2.resize(P.n2);
+    for(size_t i = 0; i < P.n2; i++) {
+        auto doc = P.V2 + i;
+        gains.V2[i] = compute_single_gain(doc, gain_cache, deg2, deg1, logn2, logn1);
+    }
+    generation++;
+    return gains;
+}
+
 template <bool isParallel = true>
 void recursive_bisection(progress_bar& progress, docid_node* G,
     size_t num_queries, size_t n, uint64_t depth,uint64_t max_depth)
@@ -493,8 +556,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
                 gains = compute_move_gains(partition, num_queries, deg1, deg2,
                     before, left2right, right2left, query_changed);
             } else {
-                gains = compute_move_gains<false>(partition, num_queries, deg1,
-                    deg2, before, left2right, right2left, query_changed);
+                gains = compute_move_gains_cached(partition, deg1, deg2);
             }
             memset(query_changed.data(), 0, num_queries);
 
