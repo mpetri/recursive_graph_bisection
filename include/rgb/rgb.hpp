@@ -7,6 +7,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <functional>
 
 #include "pstl/algorithm"
 #include "pstl/execution"
@@ -33,44 +34,37 @@ float log2_cmp(uint32_t idx)
     return log2f(idx);
 }
 
-void swap_nodes(docid_node* a, docid_node* b)
-{
-    std::swap(a->initial_id, b->initial_id);
-    std::swap(a->terms, b->terms);
-    std::swap(a->num_terms, b->num_terms);
-    std::swap(a->num_terms_not_pruned, b->num_terms_not_pruned);
-}
-
-void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
+void swap_nodes(std::reference_wrapper<docid_node>* a, std::reference_wrapper<docid_node>* b, std::vector<uint32_t>& deg1,
     std::vector<uint32_t>& deg2, std::vector<uint8_t>& queries_changed)
 {
-    for (size_t i = 0; i < a->num_terms; i++) {
-        auto qry = a->terms[i];
+    for (size_t i = 0; i < a->get().num_terms; i++) {
+        auto qry = a->get().terms[i];
         deg1[qry]--;
         deg2[qry]++;
         queries_changed[qry] = 1;
     }
 
-    for (size_t i = 0; i < b->num_terms; i++) {
-        auto qry = b->terms[i];
+    for (size_t i = 0; i < b->get().num_terms; i++) {
+        auto qry = b->get().terms[i];
         deg1[qry]++;
         deg2[qry]--;
         queries_changed[qry] = 1;
     }
-    swap_nodes(a, b);
+    std::swap(*a, *b);
 }
 
 struct bipartite_graph {
     size_t num_queries;
     size_t num_docs;
     size_t num_docs_inc_empty;
-    std::vector<docid_node> graph;
+    std::vector<std::reference_wrapper<docid_node>> graph;
+    std::vector<docid_node> docs;
     std::vector<uint32_t> doc_contents;
 };
 
 struct partition_t {
-    docid_node* V1;
-    docid_node* V2;
+    std::reference_wrapper<docid_node>* V1;
+    std::reference_wrapper<docid_node>* V2;
     size_t n1;
     size_t n2;
 };
@@ -102,8 +96,8 @@ void create_graph(bipartite_graph& bg, inverted_index& idx, uint32_t min_doc_id,
             for (size_t pos = 0; pos < dlist.size(); pos++) {
                 const auto& doc_id = dlist[pos];
                 if (min_doc_id <= doc_id && doc_id < max_doc_id) {
-                    bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+                    bg.graph[doc_id].get().initial_id = doc_id;
+                    bg.graph[doc_id].get().terms[doc_offset[doc_id]++] = termid;
                 }
             }
         }
@@ -114,8 +108,8 @@ void create_graph(bipartite_graph& bg, inverted_index& idx, uint32_t min_doc_id,
             for (size_t pos = 0; pos < dlist.size(); pos++) {
                 const auto& doc_id = dlist[pos];
                 if (min_doc_id <= doc_id && doc_id < max_doc_id) {
-                    bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
+                    bg.graph[doc_id].get().initial_id = doc_id;
+                    bg.graph[doc_id].get().terms[doc_offset[doc_id]++] = termid;
                 }
             }
         }
@@ -166,17 +160,19 @@ bipartite_graph construct_bipartite_graph(
             }
         }
         bg.doc_contents.resize(idx.num_postings);
-        bg.graph.resize(idx.max_doc_id + 1);
+        bg.docs.resize(idx.max_doc_id + 1);
         bg.num_docs_inc_empty = idx.max_doc_id + 1;
-        bg.graph[0].terms = bg.doc_contents.data();
-        bg.graph[0].num_terms = doc_sizes[0];
-        bg.graph[0].num_terms_not_pruned = doc_sizes_non_pruned[0];
+        bg.docs[0].terms = bg.doc_contents.data();
+        bg.docs[0].num_terms = doc_sizes[0];
+        bg.docs[0].num_terms_not_pruned = doc_sizes_non_pruned[0];
         for (size_t i = 1; i < doc_sizes.size(); i++) {
-            bg.graph[i].terms
-                = bg.graph[i - 1].terms + bg.graph[i - 1].num_terms_not_pruned;
-            bg.graph[i].num_terms = doc_sizes[i];
-            bg.graph[i].num_terms_not_pruned = doc_sizes_non_pruned[i];
+            bg.docs[i].terms
+                = bg.docs[i - 1].terms + bg.docs[i - 1].num_terms_not_pruned;
+            bg.docs[i].num_terms = doc_sizes[i];
+            bg.docs[i].
+            num_terms_not_pruned = doc_sizes_non_pruned[i];
         }
+        bg.graph = std::vector<std::reference_wrapper<docid_node>>(bg.docs.begin(), bg.docs.end());
     }
     {
         timer t("create forward index");
@@ -195,21 +191,21 @@ bipartite_graph construct_bipartite_graph(
 
     // Set ID for empty documents.
     for (uint32_t doc_id = 0; doc_id < idx.num_docs; ++doc_id) {
-        if (bg.graph[doc_id].initial_id != doc_id) {
-            bg.graph[doc_id].initial_id = doc_id;
+        if (bg.graph[doc_id].get().initial_id != doc_id) {
+            bg.graph[doc_id].get().initial_id = doc_id;
         }
     }
     size_t num_empty = 0;
     {
         // all docs with 0 size go to the back!
         auto empty_cmp = [](const auto& a, const auto& b) {
-            return a.num_terms > b.num_terms;
+            return a.get().num_terms > b.get().num_terms;
         };
         std::sort(bg.graph.begin(), bg.graph.end(), empty_cmp);
         auto ritr = bg.graph.end() - 1;
         auto itr = bg.graph.begin();
         while (itr != ritr) {
-            if (itr->num_terms == 0) {
+            if (itr->get().num_terms == 0) {
                 num_empty++;
             } else {
                 break;
@@ -238,7 +234,7 @@ bipartite_graph construct_bipartite_graph(
 
 
 /* random shuffle seems to do ok */
-partition_t initial_partition(docid_node* G, size_t n)
+partition_t initial_partition(std::reference_wrapper<docid_node>* G, size_t n)
 {
     partition_t p;
     std::mt19937 rnd(n);
@@ -251,14 +247,11 @@ partition_t initial_partition(docid_node* G, size_t n)
 }
 
 struct move_gain {
-    double gain;
-    docid_node* node;
-    move_gain()
-        : gain(0)
-        , node(nullptr)
-    {
-    }
-    move_gain(double g, docid_node* n)
+    double gain = 0;
+    std::reference_wrapper<docid_node>* node = nullptr;
+
+    move_gain() = default;
+    move_gain(double g, std::reference_wrapper<docid_node>* n)
         : gain(g)
         , node(n)
     {
@@ -272,12 +265,12 @@ struct move_gains_t {
 };
 
 move_gain compute_single_gain(
-    docid_node* doc, std::vector<float>& before, std::vector<float>& after)
+    std::reference_wrapper<docid_node>* doc, std::vector<float>& before, std::vector<float>& after)
 {
     float before_move = 0.0;
     float after_move = 0.0;
-    for (size_t j = 0; j < doc->num_terms; j++) {
-        auto q = doc->terms[j];
+    for (size_t j = 0; j < doc->get().num_terms; j++) {
+        auto q = doc->get().terms[j];
         before_move += before[q];
         after_move += after[q];
     }
@@ -304,14 +297,14 @@ private:
 
 using cache = std::vector<cache_entry<double>>;
 
-move_gain compute_single_gain(docid_node* doc, cache& gain_cache,
+move_gain compute_single_gain(std::reference_wrapper<docid_node>* doc, cache& gain_cache,
     std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2, float logn1,
     float logn2)
 {
 
     float gain = 0.0;
-    for (size_t j = 0; j < doc->num_terms; j++) {
-        auto q = doc->terms[j];
+    for (size_t j = 0; j < doc->get().num_terms; j++) {
+        auto q = doc->get().terms[j];
         if (not gain_cache[q].has_value()) {
             auto term_gain = deg1[q] * logn1 - deg1[q] * log2_cmp(deg1[q] + 1)
                 + deg2[q] * logn2 - deg2[q] * log2_cmp(deg2[q] + 1);
@@ -325,18 +318,18 @@ move_gain compute_single_gain(docid_node* doc, cache& gain_cache,
     return move_gain(gain, doc);
 }
 
-void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
+void compute_deg(std::reference_wrapper<docid_node>* docs, size_t n, std::vector<uint32_t>& deg)
 {
     for (size_t i = 0; i < n; i++) {
         auto doc = docs + i;
-        for (size_t j = 0; j < doc->num_terms; j++) {
-            deg[doc->terms[j]]++;
+        for (size_t j = 0; j < doc->get().num_terms; j++) {
+            deg[doc->get().terms[j]]++;
         }
     }
 }
 
 template <bool isParallel = true>
-void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
+void compute_gains(std::reference_wrapper<docid_node>* docs, size_t n, std::vector<float>& before,
     std::vector<float>& after, std::vector<move_gain>& res)
 {
     res.resize(n);
@@ -431,7 +424,7 @@ move_gains_t compute_move_gains_cached(
 }
 
 template <bool isParallel = true>
-void recursive_bisection(progress_bar& progress, docid_node* G,
+void recursive_bisection(progress_bar& progress, std::reference_wrapper<docid_node>* G,
     size_t num_queries, size_t n, uint64_t depth, uint64_t max_depth,
     size_t parallel_switch_depth)
 {
@@ -554,7 +547,7 @@ auto get_mapping = [](const auto &bg) {
     std::vector<uint32_t> mapping(bg.num_docs_inc_empty, 0u);
     size_t                p = 0;
     for (const auto &g : bg.graph) {
-        mapping[g.initial_id] = p++;
+        mapping[g.get().initial_id] = p++;
     }
     return mapping;
 };
