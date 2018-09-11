@@ -14,6 +14,8 @@
 
 #include "util.hpp"
 
+#include <x86intrin.h>
+
 namespace constants {
 const int MAX_ITER = 20;
 }
@@ -267,15 +269,28 @@ struct move_gains_t {
 move_gain compute_single_gain(
     std::reference_wrapper<docid_node>* doc, std::vector<float>& before, std::vector<float>& after)
 {
-    float before_move = 0.0;
-    float after_move = 0.0;
-    for (size_t j = 0; j < doc->get().num_terms; j++) {
-        auto q = doc->get().terms[j];
-        before_move += before[q];
-        after_move += after[q];
+    __m128 vsum = _mm_set1_ps(0);           // initialise vector of four partial 32 bit sums
+    float gain[4];
+    size_t n = doc->get().num_terms / 4;
+    size_t m = doc->get().num_terms % 4;
+
+    for (size_t j = 0; j < n; j++) {
+        auto q0 = doc->get().terms[j];
+        auto q1 = doc->get().terms[j+1];
+        auto q2 = doc->get().terms[j+2];
+        auto q3 = doc->get().terms[j+3];
+        __m128 val = _mm_set_ps (before[q0]- after[q0], before[q1]- after[q1], before[q2]- after[q2], before[q3]- after[q3]);
+        vsum = _mm_add_ps(vsum, val);
     }
-    float gain = before_move - after_move;
-    return move_gain(gain, doc);
+    _mm_store_ps(gain, vsum);
+    auto total = gain[0] + gain[1] + gain[2] + gain[3];
+
+    for (size_t j = 0; j < m; j++) {
+        auto q = doc->get().terms[n * 4 + j];
+        total += before[q]- after[q];
+    }
+
+    return move_gain(total, doc);
 }
 
 static size_t generation = 1;
@@ -297,33 +312,13 @@ private:
 
 using cache = std::vector<cache_entry<double>>;
 
-move_gain compute_single_gain(std::reference_wrapper<docid_node>* doc, cache& gain_cache,
-    std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2, float logn1,
-    float logn2)
-{
-
-    float gain = 0.0;
-    for (size_t j = 0; j < doc->get().num_terms; j++) {
-        auto q = doc->get().terms[j];
-        if (not gain_cache[q].has_value()) {
-            auto term_gain = deg1[q] * logn1 - deg1[q] * log2_cmp(deg1[q] + 1)
-                + deg2[q] * logn2 - deg2[q] * log2_cmp(deg2[q] + 1);
-            term_gain -= (deg1[q] - 1) * logn1
-                - (deg1[q] - 1) * log2_cmp(deg1[q]) + (deg2[q] + 1) * logn2
-                - (deg2[q] + 1) * log2_cmp(deg2[q] + 2);
-            gain_cache[q] = term_gain;
-        }
-        gain += gain_cache[q].value();
-    }
-    return move_gain(gain, doc);
-}
-
-void compute_deg(std::reference_wrapper<docid_node>* docs, size_t n, std::vector<uint32_t>& deg)
+void compute_deg(std::reference_wrapper<docid_node>* docs, size_t n, std::vector<uint32_t>& deg, std::vector<uint8_t>& query_changed)
 {
     for (size_t i = 0; i < n; i++) {
         auto doc = docs + i;
         for (size_t j = 0; j < doc->get().num_terms; j++) {
             deg[doc->get().terms[j]]++;
+            query_changed[doc->get().terms[j]] = 1;
         }
     }
 }
@@ -398,31 +393,6 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
     return gains;
 }
 
-move_gains_t compute_move_gains_cached(
-    partition_t& P, std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2)
-{
-    move_gains_t gains;
-    static cache gain_cache(deg1.size());
-
-    float logn1 = log2f(P.n1);
-    float logn2 = log2f(P.n2);
-    gains.V1.resize(P.n1);
-    for (size_t i = 0; i < P.n1; i++) {
-        auto doc = P.V1 + i;
-        gains.V1[i]
-            = compute_single_gain(doc, gain_cache, deg1, deg2, logn1, logn2);
-    }
-    generation++;
-    gains.V2.resize(P.n2);
-    for (size_t i = 0; i < P.n2; i++) {
-        auto doc = P.V2 + i;
-        gains.V2[i]
-            = compute_single_gain(doc, gain_cache, deg2, deg1, logn2, logn1);
-    }
-    generation++;
-    return gains;
-}
-
 template <bool isParallel = true>
 void recursive_bisection(progress_bar& progress, std::reference_wrapper<docid_node>* G,
     size_t num_queries, size_t n, uint64_t depth, uint64_t max_depth,
@@ -439,15 +409,15 @@ void recursive_bisection(progress_bar& progress, std::reference_wrapper<docid_no
         std::vector<float> left2right(num_queries);
         std::vector<float> right2left(num_queries);
 
-        std::vector<uint8_t> query_changed(num_queries, 1);
+        std::vector<uint8_t> query_changed(num_queries, 0);
         {
             if constexpr (isParallel) {
                 tbb::parallel_invoke(
-                    [&] { compute_deg(partition.V1, partition.n1, deg1); },
-                    [&] { compute_deg(partition.V2, partition.n2, deg2); });
+                    [&] { compute_deg(partition.V1, partition.n1, deg1, query_changed); },
+                    [&] { compute_deg(partition.V2, partition.n2, deg2, query_changed); });
             } else {
-                compute_deg(partition.V1, partition.n1, deg1);
-                compute_deg(partition.V2, partition.n2, deg2);
+                compute_deg(partition.V1, partition.n1, deg1, query_changed);
+                compute_deg(partition.V2, partition.n2, deg2, query_changed);
             }
         }
 
@@ -459,7 +429,8 @@ void recursive_bisection(progress_bar& progress, std::reference_wrapper<docid_no
                 gains = compute_move_gains(partition, num_queries, deg1, deg2,
                     before, left2right, right2left, query_changed);
             } else {
-                gains = compute_move_gains_cached(partition, deg1, deg2);
+                gains = compute_move_gains(partition, num_queries, deg1, deg2,
+                    before, left2right, right2left, query_changed);
             }
             memset(query_changed.data(), 0, num_queries);
 

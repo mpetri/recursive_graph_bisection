@@ -18,4 +18,7 @@ tbb_build(
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/external/parallelstl EXCLUDE_FROM_ALL)
 
 # Add mio
-add_subdirectory( external/mio )
+add_subdirectory(external/mio EXCLUDE_FROM_ALL)
+
+# Add googletest
+add_subdirectory(external/googletest EXCLUDE_FROM_ALL)
