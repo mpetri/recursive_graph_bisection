@@ -20,7 +20,6 @@ const int MAX_ITER = 20;
 struct docid_node {
     uint64_t initial_id;
     uint32_t* terms;
-    uint32_t* freqs;
     size_t num_terms;
     size_t num_terms_not_pruned;
 };
@@ -38,7 +37,6 @@ void swap_nodes(docid_node* a, docid_node* b)
 {
     std::swap(a->initial_id, b->initial_id);
     std::swap(a->terms, b->terms);
-    std::swap(a->freqs, b->freqs);
     std::swap(a->num_terms, b->num_terms);
     std::swap(a->num_terms_not_pruned, b->num_terms_not_pruned);
 }
@@ -68,7 +66,6 @@ struct bipartite_graph {
     size_t num_docs_inc_empty;
     std::vector<docid_node> graph;
     std::vector<uint32_t> doc_contents;
-    std::vector<uint32_t> doc_freqs;
 };
 
 struct partition_t {
@@ -101,13 +98,11 @@ void create_graph(bipartite_graph& bg, inverted_index& idx, uint32_t min_doc_id,
     std::vector<uint32_t> doc_offset(idx.max_doc_id + 1, 0);
     for (size_t termid = 0; termid < idx.docids.size(); termid++) {
         const auto& dlist = idx.docids[termid];
-        const auto& flist = idx.freqs[termid];
         if (dlist.size() >= min_list_len) {
             for (size_t pos = 0; pos < dlist.size(); pos++) {
                 const auto& doc_id = dlist[pos];
                 if (min_doc_id <= doc_id && doc_id < max_doc_id) {
                     bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
                     bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
                 }
             }
@@ -115,13 +110,11 @@ void create_graph(bipartite_graph& bg, inverted_index& idx, uint32_t min_doc_id,
     }
     for (size_t termid = 0; termid < idx.docids.size(); termid++) {
         const auto& dlist = idx.docids[termid];
-        const auto& flist = idx.freqs[termid];
         if (dlist.size() < min_list_len) {
             for (size_t pos = 0; pos < dlist.size(); pos++) {
                 const auto& doc_id = dlist[pos];
                 if (min_doc_id <= doc_id && doc_id < max_doc_id) {
                     bg.graph[doc_id].initial_id = doc_id;
-                    bg.graph[doc_id].freqs[doc_offset[doc_id]] = flist[pos];
                     bg.graph[doc_id].terms[doc_offset[doc_id]++] = termid;
                 }
             }
@@ -173,18 +166,14 @@ bipartite_graph construct_bipartite_graph(
             }
         }
         bg.doc_contents.resize(idx.num_postings);
-        bg.doc_freqs.resize(idx.num_postings);
         bg.graph.resize(idx.max_doc_id + 1);
         bg.num_docs_inc_empty = idx.max_doc_id + 1;
         bg.graph[0].terms = bg.doc_contents.data();
-        bg.graph[0].freqs = bg.doc_freqs.data();
         bg.graph[0].num_terms = doc_sizes[0];
         bg.graph[0].num_terms_not_pruned = doc_sizes_non_pruned[0];
         for (size_t i = 1; i < doc_sizes.size(); i++) {
             bg.graph[i].terms
                 = bg.graph[i - 1].terms + bg.graph[i - 1].num_terms_not_pruned;
-            bg.graph[i].freqs
-                = bg.graph[i - 1].freqs + bg.graph[i - 1].num_terms_not_pruned;
             bg.graph[i].num_terms = doc_sizes[i];
             bg.graph[i].num_terms_not_pruned = doc_sizes_non_pruned[i];
         }
@@ -247,76 +236,6 @@ bipartite_graph construct_bipartite_graph(
     return bg;
 }
 
-void recreate_lists(const bipartite_graph& bg, inverted_index& idx,
-    uint32_t min_q_id, uint32_t max_q_id, std::vector<uint32_t>& qmap,
-    std::vector<uint32_t>& dsizes)
-{
-    for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
-        const auto& doc = bg.graph[docid];
-        for (size_t i = 0; i < doc.num_terms_not_pruned; i++) {
-            auto qid = doc.terms[i];
-            if (min_q_id <= qmap[qid] && qmap[qid] < max_q_id) {
-                auto freq = doc.freqs[i];
-                idx.docids[qid].push_back(docid);
-                idx.freqs[qid].push_back(freq);
-                dsizes[docid] += freq;
-            }
-        }
-    }
-}
-
-inverted_index recreate_invidx(
-    const bipartite_graph& bg, size_t num_lists, size_t workers = 1)
-{
-    timer t("recreate_invidx");
-    inverted_index idx;
-    size_t num_postings = 0;
-    idx.resize(num_lists);
-    {
-        size_t qids_in_slice = num_lists / workers;
-        std::vector<uint32_t> qids_map(num_lists);
-        for (size_t i = 0; i < qids_map.size(); i++)
-            qids_map[i] = i;
-        std::mt19937 rnd(1);
-        std::shuffle(qids_map.begin(), qids_map.end(), rnd);
-        std::vector<std::vector<uint32_t>> doc_sizes(workers);
-        for (size_t id = 0; id < workers; id++) {
-            doc_sizes[id].resize(bg.num_docs_inc_empty);
-            size_t min_q_id = id * qids_in_slice;
-            size_t max_q_id = min_q_id + qids_in_slice;
-            if (id + 1 == workers) {
-                max_q_id = num_lists;
-                recreate_lists(
-                    bg, idx, min_q_id, max_q_id, qids_map, doc_sizes[id]);
-            } else {
-                recreate_lists(
-                    bg, idx, min_q_id, max_q_id, qids_map, doc_sizes[id]);
-            }
-        }
-        idx.doc_lengths.resize(bg.num_docs_inc_empty);
-        for (size_t id = 0; id < workers; id++) {
-            for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
-                idx.doc_lengths[docid] += doc_sizes[id][docid];
-            }
-        }
-    }
-    {
-
-        for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
-            const auto& doc = bg.graph[docid];
-            idx.doc_id_mapping.push_back(doc.initial_id);
-            num_postings += doc.num_terms_not_pruned;
-        }
-    }
-    idx.num_docs = bg.num_docs_inc_empty;
-    idx.max_doc_id = idx.num_docs - 1;
-    idx.num_postings = num_postings;
-    std::cout << "\tnum_docs = " << idx.num_docs << std::endl;
-    std::cout << "\tmax_doc_id = " << idx.max_doc_id << std::endl;
-    std::cout << "\tnum_lists = " << idx.docids.size() << std::endl;
-    std::cout << "\tnum_postings = " << idx.num_postings << std::endl;
-    return idx;
-}
 
 /* random shuffle seems to do ok */
 partition_t initial_partition(docid_node* G, size_t n)
