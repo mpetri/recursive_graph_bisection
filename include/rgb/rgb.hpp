@@ -24,7 +24,6 @@ struct docid_node {
     uint64_t initial_id;
     uint32_t* terms;
     size_t num_terms;
-    size_t num_terms_not_pruned;
 };
 
 std::vector<float> log2_precomp;
@@ -166,12 +165,11 @@ bipartite_graph construct_bipartite_graph(
         bg.num_docs_inc_empty = idx.max_doc_id + 1;
         bg.docs[0].terms = bg.doc_contents.data();
         bg.docs[0].num_terms = doc_sizes[0];
-        bg.docs[0].num_terms_not_pruned = doc_sizes_non_pruned[0];
+        auto num_terms_not_pruned = doc_sizes_non_pruned[0];
         for (size_t i = 1; i < doc_sizes.size(); i++) {
             bg.docs[i].terms
-                = bg.docs[i - 1].terms + bg.docs[i - 1].num_terms_not_pruned;
+                = bg.docs[i - 1].terms + num_terms_not_pruned;
             bg.docs[i].num_terms = doc_sizes[i];
-            bg.docs[i].
             num_terms_not_pruned = doc_sizes_non_pruned[i];
         }
         bg.graph = std::vector<std::reference_wrapper<docid_node>>(bg.docs.begin(), bg.docs.end());
@@ -510,6 +508,11 @@ void recursive_bisection(progress_bar& progress, std::reference_wrapper<docid_no
         if (partition.n2 == 1)
             progress.done(1);
     } else {
+        auto by_id = [](auto &&lhs, auto &&rhs) {
+            return lhs.get().initial_id < rhs.get().initial_id;
+        };
+        std::sort(
+            std::execution::unseq, G, G + n, by_id);
         progress.done(n);
     }
 }

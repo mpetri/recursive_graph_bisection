@@ -5,7 +5,7 @@
 TEST(compute_single_gain, single_term)
 {
     uint32_t terms[] = { 3 };
-    docid_node doc{ 0, terms, 1, 1 };
+    docid_node doc{ 0, terms, 1 };
     auto doc_ref = std::ref(doc);
     std::vector<float> before = { 0.5, 1, 2, 3, 4, 5 };
     std::vector<float> after = { 1.5, 1, 1, 2, 3, 4 };
@@ -17,7 +17,7 @@ TEST(compute_single_gain, single_term)
 TEST(compute_single_gain, multi_term)
 {
     uint32_t terms[] = { 1, 2, 3, 4, 5};
-    docid_node doc{ 0, terms, 5, 5 };
+    docid_node doc{ 0, terms, 5 };
     auto doc_ref = std::ref(doc);
     std::vector<float> before = { 0.5, 1, 2, 3, 4, 5 };
     std::vector<float> after = { 1.5, 1, 1, 2, 3, 4 };
@@ -29,7 +29,7 @@ TEST(compute_single_gain, multi_term)
 TEST(compute_single_gain, multi_term_negative)
 {
     uint32_t terms[] = { 0, 1, 2, 3, 4, 5};
-    docid_node doc{ 0, terms, 6, 6 };
+    docid_node doc{ 0, terms, 6 };
     auto doc_ref = std::ref(doc);
     std::vector<float> before = { 0.5, 1, 2, 3, 4, 5 };
     std::vector<float> after = { 1.5, 1, 1, 2, 3, 4 };
