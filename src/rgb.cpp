@@ -29,8 +29,7 @@ float compute_avg_loggap(const inverted_index& idx)
 
     double sum_log_gaps(0.0);
     size_t num_gaps(0);
-    for(size_t i = idx.docids.size(); i != 0; i--)
-    {
+    for (size_t i = idx.docids.size(); i != 0; i--) {
         sum_log_gaps += comp_sum_log_gap(idx.docids[i - 1], log2_precomp);
         num_gaps += idx.docids[i - 1].size();
     }
@@ -44,9 +43,12 @@ int main(int argc, char** argv)
     size_t min_len = 0;
     size_t threads = std::thread::hardware_concurrency();
 
-    CLI::App app{"Recursive graph bisection algorithm used for inverted indexed reordering."};
-    app.add_option("-c,--collection", input_basename, "Collection basename")->required();
-    app.add_option("-o,--output", output_basename, "Output basename")->required();
+    CLI::App app{ "Recursive graph bisection algorithm used for inverted "
+                  "indexed reordering." };
+    app.add_option("-c,--collection", input_basename, "Collection basename")
+        ->required();
+    app.add_option("-o,--output", output_basename, "Output basename")
+        ->required();
     app.add_option("-m,--min-len", min_len, "Minimum list threshold");
     app.add_option("-t,--threads", threads, "Thread count");
     CLI11_PARSE(app, argc, argv);
@@ -60,8 +62,8 @@ int main(int argc, char** argv)
 
     auto parallel_switch_depth = std::log2(threads);
 
-    auto reordered_invidx
-        = reorder_docids_graph_bisection(invidx, min_len, parallel_switch_depth);
+    auto reordered_invidx = reorder_docids_graph_bisection(
+        invidx, min_len, parallel_switch_depth);
 
     std::cout << "AFTER average LogGap " << compute_avg_loggap(reordered_invidx)
               << std::endl;

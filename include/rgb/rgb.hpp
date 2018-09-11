@@ -155,9 +155,9 @@ bipartite_graph construct_bipartite_graph(
                     tmp_doc_sizes_non_pruned[id], min_doc_id, max_doc_id,
                     min_list_len);
             } else {
-                    compute_doc_sizes(idx, tmp_doc_sizes[id],
-                        tmp_doc_sizes_non_pruned[id], min_doc_id, max_doc_id,
-                        min_list_len);
+                compute_doc_sizes(idx, tmp_doc_sizes[id],
+                    tmp_doc_sizes_non_pruned[id], min_doc_id, max_doc_id,
+                    min_list_len);
             }
         }
         for (auto& v : tmp_doc_sizes) {
@@ -426,9 +426,7 @@ void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
         res[i] = compute_single_gain(doc, before, after);
     };
     if constexpr (isParallel) {
-        tbb::parallel_for (size_t(0), n, [&](size_t i) {
-            body(i);
-        });
+        tbb::parallel_for(size_t(0), n, [&](size_t i) { body(i); });
     } else {
         for (size_t i = 0; i < n; i++) {
             body(i);
@@ -469,9 +467,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
         }
     };
     if constexpr (isParallel) {
-        tbb::parallel_for (size_t(0), num_queries, [&](size_t q) {
-            body(q);
-        });
+        tbb::parallel_for(size_t(0), num_queries, [&](size_t q) { body(q); });
     } else {
         for (size_t q = 0; q < num_queries; q++) {
             body(q);
@@ -517,7 +513,8 @@ move_gains_t compute_move_gains_cached(
 
 template <bool isParallel = true>
 void recursive_bisection(progress_bar& progress, docid_node* G,
-    size_t num_queries, size_t n, uint64_t depth, uint64_t max_depth, size_t parallel_switch_depth)
+    size_t num_queries, size_t n, uint64_t depth, uint64_t max_depth,
+    size_t parallel_switch_depth)
 {
     // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
@@ -558,11 +555,19 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
             {
                 if constexpr (isParallel) {
                     tbb::parallel_invoke(
-                        [&] { std::sort(std::execution::par_unseq, gains.V1.begin(), gains.V1.end()); },
-                        [&] { std::sort(std::execution::par_unseq, gains.V2.begin(), gains.V2.end()); });
+                        [&] {
+                            std::sort(std::execution::par_unseq,
+                                gains.V1.begin(), gains.V1.end());
+                        },
+                        [&] {
+                            std::sort(std::execution::par_unseq,
+                                gains.V2.begin(), gains.V2.end());
+                        });
                 } else {
-                    std::sort(std::execution::unseq, gains.V1.begin(), gains.V1.end());
-                    std::sort(std::execution::unseq, gains.V2.begin(), gains.V2.end());
+                    std::sort(std::execution::unseq, gains.V1.begin(),
+                        gains.V1.end());
+                    std::sort(std::execution::unseq, gains.V2.begin(),
+                        gains.V2.end());
                 }
             }
 
@@ -599,11 +604,13 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
             tbb::parallel_invoke(
                 [&] {
                     recursive_bisection(progress, partition.V1, num_queries,
-                        partition.n1, depth + 1, max_depth, parallel_switch_depth);
+                        partition.n1, depth + 1, max_depth,
+                        parallel_switch_depth);
                 },
                 [&] {
                     recursive_bisection(progress, partition.V2, num_queries,
-                        partition.n2, depth + 1, max_depth, parallel_switch_depth);
+                        partition.n2, depth + 1, max_depth,
+                        parallel_switch_depth);
                 });
         } else {
             if (partition.n1 > 1) {
@@ -644,8 +651,8 @@ inverted_index reorder_docids_graph_bisection(
         std::cout << "recursion depth = " << max_depth << std::endl;
         timer t("recursive_bisection");
         progress_bar bp("recursive_bisection", bg.num_docs);
-        recursive_bisection(
-            bp, bg.graph.data(), bg.num_queries, bg.num_docs, 0, max_depth, parallel_switch_depth);
+        recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs, 0,
+            max_depth, parallel_switch_depth);
     }
     return recreate_invidx(bg, num_lists);
 }
