@@ -4,19 +4,17 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include "util.hpp"
+#include "pstl/algorithm"
+#include "pstl/execution"
 
-#include <cilk/cilk.h>
-#include <cilk/cilk_api.h>
-#include <cilk/reducer_max.h>
-#include <cilk/reducer_opadd.h>
+#include "util.hpp"
 
 namespace constants {
 const int MAX_ITER = 20;
-const uint64_t PARALLEL_SWITCH_DEPTH = 6;
 }
 
 struct docid_node {
@@ -132,14 +130,13 @@ void create_graph(bipartite_graph& bg, inverted_index& idx, uint32_t min_doc_id,
 }
 
 bipartite_graph construct_bipartite_graph(
-    inverted_index& idx, size_t min_list_len)
+    inverted_index& idx, size_t min_list_len, size_t workers = 1)
 {
     timer t("construct_bipartite_graph");
     bipartite_graph bg;
     bg.num_queries = idx.size();
     {
         timer t("determine doc sizes");
-        size_t workers = __cilkrts_get_nworkers();
         std::vector<uint32_t> doc_sizes(idx.max_doc_id + 1);
         std::vector<uint32_t> doc_sizes_non_pruned(idx.max_doc_id + 1);
         std::vector<std::vector<uint32_t>> tmp_doc_sizes(workers);
@@ -158,12 +155,11 @@ bipartite_graph construct_bipartite_graph(
                     tmp_doc_sizes_non_pruned[id], min_doc_id, max_doc_id,
                     min_list_len);
             } else {
-                cilk_spawn compute_doc_sizes(idx, tmp_doc_sizes[id],
-                    tmp_doc_sizes_non_pruned[id], min_doc_id, max_doc_id,
-                    min_list_len);
+                    compute_doc_sizes(idx, tmp_doc_sizes[id],
+                        tmp_doc_sizes_non_pruned[id], min_doc_id, max_doc_id,
+                        min_list_len);
             }
         }
-        cilk_sync;
         for (auto& v : tmp_doc_sizes) {
             for (size_t i = 0; i < v.size(); i++) {
                 if (v[i] != 0)
@@ -195,7 +191,6 @@ bipartite_graph construct_bipartite_graph(
     }
     {
         timer t("create forward index");
-        size_t workers = __cilkrts_get_nworkers();
         size_t doc_ids_in_slice = idx.max_doc_id / workers;
         for (size_t id = 0; id < workers; id++) {
             size_t min_doc_id = id * doc_ids_in_slice;
@@ -204,11 +199,9 @@ bipartite_graph construct_bipartite_graph(
                 max_doc_id = idx.max_doc_id + 1;
                 create_graph(bg, idx, min_doc_id, max_doc_id, min_list_len);
             } else {
-                cilk_spawn create_graph(
-                    bg, idx, min_doc_id, max_doc_id, min_list_len);
+                create_graph(bg, idx, min_doc_id, max_doc_id, min_list_len);
             }
         }
-        cilk_sync;
     }
 
     // Set ID for empty documents.
@@ -272,14 +265,14 @@ void recreate_lists(const bipartite_graph& bg, inverted_index& idx,
     }
 }
 
-inverted_index recreate_invidx(const bipartite_graph& bg, size_t num_lists)
+inverted_index recreate_invidx(
+    const bipartite_graph& bg, size_t num_lists, size_t workers = 1)
 {
     timer t("recreate_invidx");
     inverted_index idx;
     size_t num_postings = 0;
     idx.resize(num_lists);
     {
-        size_t workers = __cilkrts_get_nworkers();
         size_t qids_in_slice = num_lists / workers;
         std::vector<uint32_t> qids_map(num_lists);
         for (size_t i = 0; i < qids_map.size(); i++)
@@ -296,11 +289,10 @@ inverted_index recreate_invidx(const bipartite_graph& bg, size_t num_lists)
                 recreate_lists(
                     bg, idx, min_q_id, max_q_id, qids_map, doc_sizes[id]);
             } else {
-                cilk_spawn recreate_lists(
+                recreate_lists(
                     bg, idx, min_q_id, max_q_id, qids_map, doc_sizes[id]);
             }
         }
-        cilk_sync;
         idx.doc_lengths.resize(bg.num_docs_inc_empty);
         for (size_t id = 0; id < workers; id++) {
             for (size_t docid = 0; docid < bg.num_docs_inc_empty; docid++) {
@@ -376,25 +368,26 @@ move_gain compute_single_gain(
 
 static size_t generation = 1;
 
-template<class T>
-class cache_entry {
-   public:
-    const T &value() { return m_value; }
-    bool     has_value() { return m_generation == generation; }
-    void     operator=(const T &v) {
-        m_value     = v;
+template <class T> class cache_entry {
+public:
+    const T& value() { return m_value; }
+    bool has_value() { return m_generation == generation; }
+    void operator=(const T& v)
+    {
+        m_value = v;
         m_generation = generation;
     }
 
-   private:
+private:
     T m_value;
     size_t m_generation = 0;
 };
 
 using cache = std::vector<cache_entry<double>>;
 
-move_gain compute_single_gain(
-    docid_node* doc, cache& gain_cache, std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2, float logn1, float logn2)
+move_gain compute_single_gain(docid_node* doc, cache& gain_cache,
+    std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2, float logn1,
+    float logn2)
 {
 
     float gain = 0.0;
@@ -402,17 +395,16 @@ move_gain compute_single_gain(
         auto q = doc->terms[j];
         if (not gain_cache[q].has_value()) {
             auto term_gain = deg1[q] * logn1 - deg1[q] * log2_cmp(deg1[q] + 1)
-                        + deg2[q] * logn2 - deg2[q] * log2_cmp(deg2[q] + 1);
+                + deg2[q] * logn2 - deg2[q] * log2_cmp(deg2[q] + 1);
             term_gain -= (deg1[q] - 1) * logn1
-                        - (deg1[q] - 1) * log2_cmp(deg1[q]) + (deg2[q] + 1) * logn2
-                        - (deg2[q] + 1) * log2_cmp(deg2[q] + 2);
+                - (deg1[q] - 1) * log2_cmp(deg1[q]) + (deg2[q] + 1) * logn2
+                - (deg2[q] + 1) * log2_cmp(deg2[q] + 2);
             gain_cache[q] = term_gain;
         }
         gain += gain_cache[q].value();
     }
     return move_gain(gain, doc);
 }
-
 
 void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
 {
@@ -429,16 +421,16 @@ void compute_gains(docid_node* docs, size_t n, std::vector<float>& before,
     std::vector<float>& after, std::vector<move_gain>& res)
 {
     res.resize(n);
-    auto body = [&] (auto &&i) {
+    auto body = [&](auto&& i) {
         auto doc = docs + i;
         res[i] = compute_single_gain(doc, before, after);
     };
-    if constexpr (isParallel){
-        cilk_for(size_t i = 0; i < n; i++) {
+    if constexpr (isParallel) {
+        tbb::parallel_for (size_t(0), n, [&](size_t i) {
             body(i);
-        }
-    } else{
-        for(size_t i = 0; i < n; i++) {
+        });
+    } else {
+        for (size_t i = 0; i < n; i++) {
             body(i);
         }
     }
@@ -455,7 +447,7 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
     float logn1 = log2f(P.n1);
     float logn2 = log2f(P.n2);
 
-    auto body = [&] (auto &&q) {
+    auto body = [&](auto&& q) {
         if (qry_changed[q] == 1) {
             qry_changed[q] = 0;
             before[q] = 0;
@@ -476,30 +468,30 @@ move_gains_t compute_move_gains(partition_t& P, size_t num_queries,
                     + (deg2[q] - 1) * logn2 - (deg2[q] - 1) * log2_cmp(deg2[q]);
         }
     };
-    if constexpr (isParallel){
-        cilk_for(size_t q = 0; q < num_queries; q++) {
+    if constexpr (isParallel) {
+        tbb::parallel_for (size_t(0), num_queries, [&](size_t q) {
             body(q);
-        }
-    } else{
-        for(size_t q = 0; q < num_queries; q++) {
+        });
+    } else {
+        for (size_t q = 0; q < num_queries; q++) {
             body(q);
         }
     }
 
     // (2) compute gains from moving docs
-    if constexpr (isParallel){
-        cilk_spawn compute_gains(P.V1, P.n1, before, left2right, gains.V1);
-        compute_gains(P.V2, P.n2, before, right2left, gains.V2);
-        cilk_sync;
-    } else{
+    if constexpr (isParallel) {
+        tbb::parallel_invoke(
+            [&] { compute_gains(P.V1, P.n1, before, left2right, gains.V1); },
+            [&] { compute_gains(P.V2, P.n2, before, right2left, gains.V2); });
+    } else {
         compute_gains<false>(P.V1, P.n1, before, left2right, gains.V1);
         compute_gains<false>(P.V2, P.n2, before, right2left, gains.V2);
     }
     return gains;
 }
 
-move_gains_t compute_move_gains_cached(partition_t& P,
-    std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2)
+move_gains_t compute_move_gains_cached(
+    partition_t& P, std::vector<uint32_t>& deg1, std::vector<uint32_t>& deg2)
 {
     move_gains_t gains;
     static cache gain_cache(deg1.size());
@@ -507,15 +499,17 @@ move_gains_t compute_move_gains_cached(partition_t& P,
     float logn1 = log2f(P.n1);
     float logn2 = log2f(P.n2);
     gains.V1.resize(P.n1);
-    for(size_t i = 0; i < P.n1; i++) {
+    for (size_t i = 0; i < P.n1; i++) {
         auto doc = P.V1 + i;
-        gains.V1[i] = compute_single_gain(doc, gain_cache, deg1, deg2, logn1, logn2);
+        gains.V1[i]
+            = compute_single_gain(doc, gain_cache, deg1, deg2, logn1, logn2);
     }
     generation++;
     gains.V2.resize(P.n2);
-    for(size_t i = 0; i < P.n2; i++) {
+    for (size_t i = 0; i < P.n2; i++) {
         auto doc = P.V2 + i;
-        gains.V2[i] = compute_single_gain(doc, gain_cache, deg2, deg1, logn2, logn1);
+        gains.V2[i]
+            = compute_single_gain(doc, gain_cache, deg2, deg1, logn2, logn1);
     }
     generation++;
     return gains;
@@ -523,7 +517,7 @@ move_gains_t compute_move_gains_cached(partition_t& P,
 
 template <bool isParallel = true>
 void recursive_bisection(progress_bar& progress, docid_node* G,
-    size_t num_queries, size_t n, uint64_t depth,uint64_t max_depth)
+    size_t num_queries, size_t n, uint64_t depth, uint64_t max_depth, size_t parallel_switch_depth)
 {
     // (1) create the initial partition. O(n)
     auto partition = initial_partition(G, n);
@@ -538,10 +532,10 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
 
         std::vector<uint8_t> query_changed(num_queries, 1);
         {
-            if constexpr (isParallel){
-                cilk_spawn compute_deg(partition.V1, partition.n1, deg1);
-                compute_deg(partition.V2, partition.n2, deg2);
-                cilk_sync;
+            if constexpr (isParallel) {
+                tbb::parallel_invoke(
+                    [&] { compute_deg(partition.V1, partition.n1, deg1); },
+                    [&] { compute_deg(partition.V2, partition.n2, deg2); });
             } else {
                 compute_deg(partition.V1, partition.n1, deg1);
                 compute_deg(partition.V2, partition.n2, deg2);
@@ -552,7 +546,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
         for (int cur_iter = 1; cur_iter <= constants::MAX_ITER; cur_iter++) {
             // (3a) compute move gains
             move_gains_t gains;
-            if constexpr (isParallel){
+            if constexpr (isParallel) {
                 gains = compute_move_gains(partition, num_queries, deg1, deg2,
                     before, left2right, right2left, query_changed);
             } else {
@@ -562,10 +556,10 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
 
             // (3b) sort by decreasing gain. O(n log n)
             {
-                if constexpr (isParallel){
-                    cilk_spawn std::sort(gains.V1.begin(), gains.V1.end());
-                    std::sort(gains.V2.begin(), gains.V2.end());
-                    cilk_sync;
+                if constexpr (isParallel) {
+                    tbb::parallel_invoke(
+                        [&] { std::sort(gains.V1.begin(), gains.V1.end()); },
+                        [&] { std::sort(gains.V2.begin(), gains.V2.end()); });
                 } else {
                     std::sort(gains.V1.begin(), gains.V1.end());
                     std::sort(gains.V2.begin(), gains.V2.end());
@@ -601,24 +595,24 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
 
     // (4) recurse. at most O(log n) recursion steps
     if (depth + 1 <= max_depth) {
-        if (depth < constants::PARALLEL_SWITCH_DEPTH) {
-            if (partition.n1 > 1) {
-                cilk_spawn recursive_bisection(progress, partition.V1,
-                    num_queries, partition.n1, depth + 1,max_depth);
-            }
-            if (partition.n2 > 1) {
-                recursive_bisection(progress, partition.V2, num_queries,
-                    partition.n2, depth + 1,max_depth);
-            }
-            cilk_sync;
+        if (depth < parallel_switch_depth) {
+            tbb::parallel_invoke(
+                [&] {
+                    recursive_bisection(progress, partition.V1, num_queries,
+                        partition.n1, depth + 1, max_depth, parallel_switch_depth);
+                },
+                [&] {
+                    recursive_bisection(progress, partition.V2, num_queries,
+                        partition.n2, depth + 1, max_depth, parallel_switch_depth);
+                });
         } else {
             if (partition.n1 > 1) {
                 recursive_bisection<false>(progress, partition.V1, num_queries,
-                    partition.n1, depth + 1,max_depth);
+                    partition.n1, depth + 1, max_depth, parallel_switch_depth);
             }
             if (partition.n2 > 1) {
                 recursive_bisection<false>(progress, partition.V2, num_queries,
-                    partition.n2, depth + 1,max_depth);
+                    partition.n2, depth + 1, max_depth, parallel_switch_depth);
             }
         }
         if (partition.n1 == 1)
@@ -631,7 +625,7 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
 }
 
 inverted_index reorder_docids_graph_bisection(
-    inverted_index& invidx, size_t min_list_len)
+    inverted_index& invidx, size_t min_list_len, size_t parallel_switch_depth)
 {
     auto num_lists = invidx.docids.size();
     auto bg = construct_bipartite_graph(invidx, min_list_len);
@@ -641,14 +635,17 @@ inverted_index reorder_docids_graph_bisection(
 
     // make things faster by precomputing some logs
     log2_precomp.resize(256);
-    for(size_t i = 0; i < 256; i++) { log2_precomp[i] = log2f(i); }
+    for (size_t i = 0; i < 256; i++) {
+        log2_precomp[i] = log2f(i);
+    }
 
     {
-        auto max_depth = std::max(1.0,ceil(log2(bg.num_docs)-5));
+        auto max_depth = std::max(1.0, ceil(log2(bg.num_docs) - 5));
         std::cout << "recursion depth = " << max_depth << std::endl;
         timer t("recursive_bisection");
         progress_bar bp("recursive_bisection", bg.num_docs);
-        recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs, 0, max_depth);
+        recursive_bisection(
+            bp, bg.graph.data(), bg.num_queries, bg.num_docs, 0, max_depth, parallel_switch_depth);
     }
     return recreate_invidx(bg, num_lists);
 }
