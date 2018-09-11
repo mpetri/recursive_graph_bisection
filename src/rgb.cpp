@@ -62,15 +62,14 @@ int main(int argc, char** argv)
 
     auto parallel_switch_depth = std::log2(threads);
 
-    auto reordered_invidx = reorder_docids_graph_bisection(
-        invidx, min_len, parallel_switch_depth);
+    auto mapping = reorder_docids_graph_bisection(invidx, min_len, parallel_switch_depth);
 
-    std::cout << "AFTER average LogGap " << compute_avg_loggap(reordered_invidx)
-              << std::endl;
+    // std::cout << "AFTER average LogGap " << compute_avg_loggap(reordered_invidx)
+    //           << std::endl;
 
     {
-        timer t("write ds2i files");
-        write_ds2i_files(reordered_invidx, output_basename);
+        timer t("write reordered inverted index");
+        reorder_inverted_index(input_basename, output_basename, mapping);
     }
 
     return EXIT_SUCCESS;

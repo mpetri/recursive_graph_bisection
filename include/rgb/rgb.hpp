@@ -631,10 +631,18 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
     }
 }
 
-inverted_index reorder_docids_graph_bisection(
+auto get_mapping = [](const auto &bg) {
+    std::vector<uint32_t> mapping(bg.num_docs_inc_empty, 0u);
+    size_t                p = 0;
+    for (const auto &g : bg.graph) {
+        mapping[g.initial_id] = p++;
+    }
+    return mapping;
+};
+
+std::vector<uint32_t> reorder_docids_graph_bisection(
     inverted_index& invidx, size_t min_list_len, size_t parallel_switch_depth)
 {
-    auto num_lists = invidx.docids.size();
     auto bg = construct_bipartite_graph(invidx, min_list_len);
 
     // free up some space
@@ -654,5 +662,5 @@ inverted_index reorder_docids_graph_bisection(
         recursive_bisection(bp, bg.graph.data(), bg.num_queries, bg.num_docs, 0,
             max_depth, parallel_switch_depth);
     }
-    return recreate_invidx(bg, num_lists);
+    return get_mapping(bg);
 }
