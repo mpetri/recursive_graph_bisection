@@ -344,7 +344,7 @@ struct move_gain {
         , node(n)
     {
     }
-    bool operator<(const move_gain& other) { return gain > other.gain; }
+    bool operator<(const move_gain& other) const { return gain > other.gain; }
 };
 
 struct move_gains_t {
@@ -558,11 +558,11 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
             {
                 if constexpr (isParallel) {
                     tbb::parallel_invoke(
-                        [&] { std::sort(gains.V1.begin(), gains.V1.end()); },
-                        [&] { std::sort(gains.V2.begin(), gains.V2.end()); });
+                        [&] { std::sort(std::execution::par_unseq, gains.V1.begin(), gains.V1.end()); },
+                        [&] { std::sort(std::execution::par_unseq, gains.V2.begin(), gains.V2.end()); });
                 } else {
-                    std::sort(gains.V1.begin(), gains.V1.end());
-                    std::sort(gains.V2.begin(), gains.V2.end());
+                    std::sort(std::execution::unseq, gains.V1.begin(), gains.V1.end());
+                    std::sort(std::execution::unseq, gains.V2.begin(), gains.V2.end());
                 }
             }
 
