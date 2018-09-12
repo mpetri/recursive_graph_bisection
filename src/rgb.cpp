@@ -2,9 +2,11 @@
 
 #include "rgb/rgb.hpp"
 #include "rgb/util.hpp"
+#include "rgb/forward_index.hpp"
 
 #include "CLI/CLI.hpp"
 #include "tbb/task_scheduler_init.h"
+
 
 double comp_sum_log_gap(
     const std::vector<uint32_t>& ids, const std::vector<float>& log2_precomp)
@@ -55,15 +57,15 @@ int main(int argc, char** argv)
 
     tbb::task_scheduler_init init(threads);
 
-    auto invidx = read_ds2i_files(input_basename);
+    auto fwd = forward_index::from_inverted_index(input_basename, min_len);
 
-    std::cout << "BEFORE average LogGap " << compute_avg_loggap(invidx)
-              << std::endl;
+    // std::cout << "BEFORE average LogGap " << compute_avg_loggap(invidx)
+    //           << std::endl;
 
     auto parallel_switch_depth = std::log2(threads);
 
-    auto mapping = reorder_docids_graph_bisection(invidx, min_len, parallel_switch_depth);
-
+    auto mapping = reorder_docids_graph_bisection(fwd, min_len, parallel_switch_depth);
+    fwd.clear();
     // std::cout << "AFTER average LogGap " << compute_avg_loggap(reordered_invidx)
     //           << std::endl;
 
