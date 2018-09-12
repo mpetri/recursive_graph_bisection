@@ -360,26 +360,39 @@ struct move_gains_t {
     std::vector<move_gain> V2;
 };
 
-move_gain compute_single_gain(
-    docid_node* doc, std::vector<float>& before, std::vector<float>& after)
+move_gain compute_single_gain(docid_node* doc,
+    std::vector<float>& before, std::vector<float>& after)
 {
-    float before_move = 0.0;
-    float after_move = 0.0;
-    for (size_t j = 0; j < doc->num_terms; j++) {
-        auto q = doc->terms[j];
-        before_move += before[q];
-        after_move += after[q];
+    __m128 _vsum = _mm_set1_ps(0);
+    float gain[4];
+    size_t n = doc->num_terms / 4;
+    size_t m = doc->num_terms % 4;
+    for (size_t j = 0; j < n * 4; j+=4) {
+        auto q0 = doc->terms[j];
+        auto q1 = doc->terms[j + 1];
+        auto q2 = doc->terms[j + 2];
+        auto q3 = doc->terms[j + 3];
+        __m128 _before = _mm_set_ps(before[q0], before[q1], before[q2], before[q3]);
+        __m128 _after = _mm_set_ps(after[q0], after[q1], after[q2], after[q3]);
+        __m128 _val = _mm_sub_ps(_before, _after);
+        _vsum = _mm_add_ps(_vsum, _val);
     }
-    float gain = before_move - after_move;
-    return move_gain(gain, doc);
+    _mm_store_ps(gain, _vsum);
+    auto total = gain[0] + gain[1] + gain[2] + gain[3];
+    for (size_t j = 0; j < m; j++) {
+        auto q = doc->terms[n * 4 + j];
+        total += before[q] - after[q];
+    }
+    return move_gain(total, doc);
 }
 
-void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg)
+void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg, std::vector<uint8_t> &query_changed)
 {
     for (size_t i = 0; i < n; i++) {
         auto doc = docs + i;
         for (size_t j = 0; j < doc->num_terms; j++) {
             deg[doc->terms[j]]++;
+            query_changed[doc->terms[j]] = 1;
         }
     }
 }
@@ -497,10 +510,10 @@ void recursive_bisection_np(progress_bar& progress, docid_node* G,
         std::vector<float> left2right(num_queries);
         std::vector<float> right2left(num_queries);
 
-        std::vector<uint8_t> query_changed(num_queries, 1);
+        std::vector<uint8_t> query_changed(num_queries, 0);
         {
-            compute_deg(partition.V1, partition.n1, deg1);
-            compute_deg(partition.V2, partition.n2, deg2);
+            compute_deg(partition.V1, partition.n1, deg1, query_changed);
+            compute_deg(partition.V2, partition.n2, deg2, query_changed);
         }
 
         // (3) perform bisection. constant number of iterations
@@ -575,10 +588,10 @@ void recursive_bisection(progress_bar& progress, docid_node* G,
         std::vector<float> left2right(num_queries);
         std::vector<float> right2left(num_queries);
 
-        std::vector<uint8_t> query_changed(num_queries, 1);
+        std::vector<uint8_t> query_changed(num_queries, 0);
         {
-            cilk_spawn compute_deg(partition.V1, partition.n1, deg1);
-            compute_deg(partition.V2, partition.n2, deg2);
+            cilk_spawn compute_deg(partition.V1, partition.n1, deg1, query_changed);
+            compute_deg(partition.V2, partition.n2, deg2, query_changed);
             cilk_sync;
         }
 
