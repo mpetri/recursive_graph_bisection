@@ -1,0 +1,15 @@
+[submodule "external/tbb"]
+	path = external/tbb
+	url = https://github.com/01org/tbb.git
+[submodule "external/parallelstl"]
+	path = external/parallelstl
+	url = https://github.com/intel/parallelstl.git
+[submodule "external/CLI11"]
+	path = external/CLI11
+	url = https://github.com/CLIUtils/CLI11.git
+[submodule "external/mio"]
+	path = external/mio
+	url = https://github.com/mandreyel/mio.git
+[submodule "external/googletest"]
+	path = external/googletest
+	url = https://github.com/google/googletest.git
