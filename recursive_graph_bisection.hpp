@@ -62,24 +62,25 @@ void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
             {
                 __m128i _deg1 = _mm_set_epi32(deg1[q0], deg1[q1], deg1[q2], deg1[q3]);
                 __m128i _result = _mm_sub_epi32(_deg1, _one);
-                deg1[q0] = _mm_extract_epi32(_result, 3);
-                deg1[q1] = _mm_extract_epi32(_result, 2);
-                deg1[q2] = _mm_extract_epi32(_result, 1);
-                deg1[q3] = _mm_extract_epi32(_result, 0);
+
+                deg1[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg1[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg1[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg1[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
             }
             {
                 __m128i _deg2 = _mm_set_epi32(deg2[q0], deg2[q1], deg2[q2], deg2[q3]);
                 __m128i _result = _mm_add_epi32(_deg2, _one);
-                deg2[q0] = _mm_extract_epi32(_result, 3);
-                deg2[q1] = _mm_extract_epi32(_result, 2);
-                deg2[q2] = _mm_extract_epi32(_result, 1);
-                deg2[q3] = _mm_extract_epi32(_result, 0);
+                deg2[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg2[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg2[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg2[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
 
             }
-            queries_changed[q0] = _mm_extract_epi32(_one, 3);
-            queries_changed[q1] = _mm_extract_epi32(_one, 2);
-            queries_changed[q2] = _mm_extract_epi32(_one, 1);
-            queries_changed[q3] = _mm_extract_epi32(_one, 0);
+            queries_changed[q0] = _mm_cvtsi128_si32(_one);
+            queries_changed[q1] = _mm_cvtsi128_si32(_one);
+            queries_changed[q2] = _mm_cvtsi128_si32(_one);
+            queries_changed[q3] = _mm_cvtsi128_si32(_one);
         }
         for (size_t i = 0; i < m; i++) {
             auto qry = a->terms[n * 4 + i];
@@ -101,24 +102,24 @@ void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
             {
                 __m128i _deg1 = _mm_set_epi32(deg1[q0], deg1[q1], deg1[q2], deg1[q3]);
                 __m128i _result = _mm_add_epi32(_deg1, _one);
-                deg1[q0] = _mm_extract_epi32(_result, 3);
-                deg1[q1] = _mm_extract_epi32(_result, 2);
-                deg1[q2] = _mm_extract_epi32(_result, 1);
-                deg1[q3] = _mm_extract_epi32(_result, 0);
+                deg1[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg1[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg1[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg1[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
             }
             {
                 __m128i _deg2 = _mm_set_epi32(deg2[q0], deg2[q1], deg2[q2], deg2[q3]);
                 __m128i _result = _mm_sub_epi32(_deg2, _one);
-                deg2[q0] = _mm_extract_epi32(_result, 3);
-                deg2[q1] = _mm_extract_epi32(_result, 2);
-                deg2[q2] = _mm_extract_epi32(_result, 1);
-                deg2[q3] = _mm_extract_epi32(_result, 0);
+                deg2[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg2[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg2[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg2[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
 
             }
-            queries_changed[q0] = _mm_extract_epi32(_one, 3);
-            queries_changed[q1] = _mm_extract_epi32(_one, 2);
-            queries_changed[q2] = _mm_extract_epi32(_one, 1);
-            queries_changed[q3] = _mm_extract_epi32(_one, 0);
+            queries_changed[q0] = _mm_cvtsi128_si32(_one);
+            queries_changed[q1] = _mm_cvtsi128_si32(_one);
+            queries_changed[q2] = _mm_cvtsi128_si32(_one);
+            queries_changed[q3] = _mm_cvtsi128_si32(_one);
         }
         for (size_t i = 0; i < m; i++) {
             auto qry = b->terms[n * 4 + i];
@@ -466,15 +467,16 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg, std::ve
             __m128i _one = _mm_set1_epi32(1);
             __m128i _deg = _mm_set_epi32(deg[q0], deg[q1], deg[q2], deg[q3]);
             __m128i _result = _mm_add_epi32(_deg, _one);
-            deg[q0] = _mm_extract_epi32(_result, 3);
-            deg[q1] = _mm_extract_epi32(_result, 2);
-            deg[q2] = _mm_extract_epi32(_result, 1);
-            deg[q3] = _mm_extract_epi32(_result, 0);
 
-            query_changed[q0] = _mm_extract_epi32(_one, 3);
-            query_changed[q1] = _mm_extract_epi32(_one, 2);
-            query_changed[q2] = _mm_extract_epi32(_one, 1);
-            query_changed[q3] = _mm_extract_epi32(_one, 0);
+            deg[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+            deg[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+            deg[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+            deg[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
+
+            query_changed[q0] = _mm_cvtsi128_si32(_one);
+            query_changed[q1] = _mm_cvtsi128_si32(_one);
+            query_changed[q2] = _mm_cvtsi128_si32(_one);
+            query_changed[q3] = _mm_cvtsi128_si32(_one);
         }
         for (size_t j = 0; j < m; j++) {
             auto qry = doc->terms[n * 4 + j];
