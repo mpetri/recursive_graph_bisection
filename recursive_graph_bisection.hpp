@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <x86intrin.h>
 
 #include "util.hpp"
 
@@ -48,18 +49,84 @@ void swap_nodes(docid_node* a, docid_node* b)
 void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
     std::vector<uint32_t>& deg2, std::vector<uint8_t>& queries_changed)
 {
-    for (size_t i = 0; i < a->num_terms; i++) {
-        auto qry = a->terms[i];
-        deg1[qry]--;
-        deg2[qry]++;
-        queries_changed[qry] = 1;
-    }
+    {
+        size_t n = a->num_terms / 4;
+        size_t m = a->num_terms % 4;
+        for (size_t i = 0; i < n * 4; i+=4) {
+            auto q0 = a->terms[i];
+            auto q1 = a->terms[i + 1];
+            auto q2 = a->terms[i + 2];
+            auto q3 = a->terms[i + 3];
+            __m128i _one = _mm_set1_epi32(1);
 
-    for (size_t i = 0; i < b->num_terms; i++) {
-        auto qry = b->terms[i];
-        deg1[qry]++;
-        deg2[qry]--;
-        queries_changed[qry] = 1;
+            {
+                __m128i _deg1 = _mm_set_epi32(deg1[q0], deg1[q1], deg1[q2], deg1[q3]);
+                __m128i _result = _mm_sub_epi32(_deg1, _one);
+
+                deg1[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg1[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg1[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg1[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
+            }
+            {
+                __m128i _deg2 = _mm_set_epi32(deg2[q0], deg2[q1], deg2[q2], deg2[q3]);
+                __m128i _result = _mm_add_epi32(_deg2, _one);
+                deg2[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg2[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg2[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg2[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
+
+            }
+            queries_changed[q0] = _mm_cvtsi128_si32(_one);
+            queries_changed[q1] = _mm_cvtsi128_si32(_one);
+            queries_changed[q2] = _mm_cvtsi128_si32(_one);
+            queries_changed[q3] = _mm_cvtsi128_si32(_one);
+        }
+        for (size_t i = 0; i < m; i++) {
+            auto qry = a->terms[n * 4 + i];
+            deg1[qry]--;
+            deg2[qry]++;
+            queries_changed[qry] = 1;
+        }
+    }
+    {
+        size_t n = b->num_terms / 4;
+        size_t m = b->num_terms % 4;
+        for (size_t i = 0; i < n * 4; i+=4) {
+            auto q0 = b->terms[i];
+            auto q1 = b->terms[i + 1];
+            auto q2 = b->terms[i + 2];
+            auto q3 = b->terms[i + 3];
+            __m128i _one = _mm_set1_epi32(1);
+
+            {
+                __m128i _deg1 = _mm_set_epi32(deg1[q0], deg1[q1], deg1[q2], deg1[q3]);
+                __m128i _result = _mm_add_epi32(_deg1, _one);
+                deg1[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg1[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg1[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg1[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
+            }
+            {
+                __m128i _deg2 = _mm_set_epi32(deg2[q0], deg2[q1], deg2[q2], deg2[q3]);
+                __m128i _result = _mm_sub_epi32(_deg2, _one);
+                deg2[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+                deg2[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+                deg2[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+                deg2[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
+
+            }
+            queries_changed[q0] = _mm_cvtsi128_si32(_one);
+            queries_changed[q1] = _mm_cvtsi128_si32(_one);
+            queries_changed[q2] = _mm_cvtsi128_si32(_one);
+            queries_changed[q3] = _mm_cvtsi128_si32(_one);
+        }
+        for (size_t i = 0; i < m; i++) {
+            auto qry = b->terms[n * 4 + i];
+            deg1[qry]++;
+            deg2[qry]--;
+            queries_changed[qry] = 1;
+        }
     }
     swap_nodes(a, b);
 }
@@ -390,9 +457,31 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg, std::ve
 {
     for (size_t i = 0; i < n; i++) {
         auto doc = docs + i;
-        for (size_t j = 0; j < doc->num_terms; j++) {
-            deg[doc->terms[j]]++;
-            query_changed[doc->terms[j]] = 1;
+        size_t n = doc->num_terms / 4;
+        size_t m = doc->num_terms % 4;
+        for (size_t j = 0; j < n * 4; j+=4) {
+            auto q0 = doc->terms[j];
+            auto q1 = doc->terms[j + 1];
+            auto q2 = doc->terms[j + 2];
+            auto q3 = doc->terms[j + 3];
+            __m128i _one = _mm_set1_epi32(1);
+            __m128i _deg = _mm_set_epi32(deg[q0], deg[q1], deg[q2], deg[q3]);
+            __m128i _result = _mm_add_epi32(_deg, _one);
+
+            deg[q0] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 3)));
+            deg[q1] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 2)));
+            deg[q2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 1)));
+            deg[q3] = _mm_cvtsi128_si32(_mm_shuffle_epi32(_result, _MM_SHUFFLE(0, 0, 0, 0)));
+
+            query_changed[q0] = _mm_cvtsi128_si32(_one);
+            query_changed[q1] = _mm_cvtsi128_si32(_one);
+            query_changed[q2] = _mm_cvtsi128_si32(_one);
+            query_changed[q3] = _mm_cvtsi128_si32(_one);
+        }
+        for (size_t j = 0; j < m; j++) {
+            auto qry = doc->terms[n * 4 + j];
+            deg[qry]++;
+            query_changed[qry] = 1;
         }
     }
 }
