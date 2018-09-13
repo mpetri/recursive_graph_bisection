@@ -471,10 +471,10 @@ void compute_deg(docid_node* docs, size_t n, std::vector<uint32_t>& deg, std::ve
             deg[q2] = _mm_extract_epi32(_result, 1);
             deg[q3] = _mm_extract_epi32(_result, 0);
 
-            query_changed[q0] = 1;
-            query_changed[q1] = 1;
-            query_changed[q2] = 1;
-            query_changed[q3] = 1;
+            query_changed[q0] = _mm_extract_epi32(_one, 3);
+            query_changed[q1] = _mm_extract_epi32(_one, 2);
+            query_changed[q2] = _mm_extract_epi32(_one, 1);
+            query_changed[q3] = _mm_extract_epi32(_one, 0);
         }
         for (size_t j = 0; j < m; j++) {
             auto qry = doc->terms[n * 4 + j];
