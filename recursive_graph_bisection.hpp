@@ -76,10 +76,10 @@ void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
                 deg2[q3] = _mm_extract_epi32(_result, 0);
 
             }
-            queries_changed[q0] = 1;
-            queries_changed[q1] = 1;
-            queries_changed[q2] = 1;
-            queries_changed[q3] = 1;
+            queries_changed[q0] = _mm_extract_epi32(_one, 3);
+            queries_changed[q1] = _mm_extract_epi32(_one, 2);
+            queries_changed[q2] = _mm_extract_epi32(_one, 1);
+            queries_changed[q3] = _mm_extract_epi32(_one, 0);
         }
         for (size_t i = 0; i < m; i++) {
             auto qry = a->terms[n * 4 + i];
@@ -115,10 +115,10 @@ void swap_nodes(docid_node* a, docid_node* b, std::vector<uint32_t>& deg1,
                 deg2[q3] = _mm_extract_epi32(_result, 0);
 
             }
-            queries_changed[q0] = 1;
-            queries_changed[q1] = 1;
-            queries_changed[q2] = 1;
-            queries_changed[q3] = 1;
+            queries_changed[q0] = _mm_extract_epi32(_one, 3);
+            queries_changed[q1] = _mm_extract_epi32(_one, 2);
+            queries_changed[q2] = _mm_extract_epi32(_one, 1);
+            queries_changed[q3] = _mm_extract_epi32(_one, 0);
         }
         for (size_t i = 0; i < m; i++) {
             auto qry = b->terms[n * 4 + i];
