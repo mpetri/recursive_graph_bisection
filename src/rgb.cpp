@@ -1,5 +1,5 @@
-#include "recursive_graph_bisection.hpp"
-#include "util.hpp"
+#include "rgb/rgb.hpp"
+#include "rgb/util.hpp"
 
 #include <cilk/cilk_api.h>
 #include <cilk/reducer_opadd.h>
